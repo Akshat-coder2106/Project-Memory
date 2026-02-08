@@ -8,8 +8,14 @@ from pathlib import Path
 from typing import Optional
 
 # Retry on 429: max attempts and cap wait time (seconds)
-_MAX_429_RETRIES = 1
-_MAX_429_WAIT = 60
+# Free tier is ~20 req/min; allow several waits so "retry in 59s" is honored
+_MAX_429_RETRIES = 3
+_MAX_429_WAIT = 90
+
+# Client-side rate limit: stay under Gemini free tier (20 req/min)
+_RATE_LIMIT_WINDOW = 60  # seconds
+_RATE_LIMIT_MAX_CALLS = 15  # leave buffer under 20
+_gemini_call_times: list[float] = []
 
 # Models to try in order when one returns 429 (valid v1beta model IDs only)
 _DEFAULT_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
@@ -17,10 +23,17 @@ _DEFAULT_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-lit
 # Lazy init: "new" = google.genai Client, "old" = GenerativeModel, False = failed
 _client = None
 _use_new_sdk = None
+# Multi-key: GEMINI_API_KEY can be "key1,key2,key3". When one hits 429 we try the next.
+_api_keys: list[str] = []
+_client_key_index: Optional[int] = None  # which key the current _client uses
+_exhausted_key_indices: set[int] = set()  # keys that returned 429 this session
 
 # Session cache: prefer last working model, skip models that returned "limit: 0"
 _last_working_model: Optional[str] = None
 _models_with_no_quota: set[str] = set()
+
+# Quota saver: use only 1 Gemini call per message (reply only). Set True on 429 or when GEMINI_SAVE_QUOTA=1
+_quota_saving_mode = False
 
 # Project root for .env loading
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -67,43 +80,101 @@ def _retry_after_seconds(e: Exception) -> float:
     return 45.0  # default wait
 
 
+def _wait_for_quota():
+    """Block until we're under the per-minute quota so we don't hit 429."""
+    global _gemini_call_times
+    now = time.monotonic()
+    # drop timestamps outside the window
+    while _gemini_call_times and _gemini_call_times[0] < now - _RATE_LIMIT_WINDOW:
+        _gemini_call_times.pop(0)
+    if len(_gemini_call_times) >= _RATE_LIMIT_MAX_CALLS:
+        wait = _RATE_LIMIT_WINDOW - (now - _gemini_call_times[0])
+        if wait > 0.5:
+            print(f"[Gemini] Throttling: waiting {wait:.0f}s to stay under quota...", file=sys.stderr)
+            time.sleep(wait)
+        now = time.monotonic()
+        while _gemini_call_times and _gemini_call_times[0] < now - _RATE_LIMIT_WINDOW:
+            _gemini_call_times.pop(0)
+
+
+def _record_gemini_call():
+    """Record that we're making a Gemini API call (for rate limiting)."""
+    _gemini_call_times.append(time.monotonic())
+
+
 def is_available() -> bool:
     """Check if Gemini API is configured and working."""
     return _get_client() is not None
 
 
+def is_quota_saving() -> bool:
+    """True = use only 1 Gemini call per message (reply only). Saves quota (free tier is 20/day)."""
+    if _quota_saving_mode:
+        return True
+    v = (os.environ.get("GEMINI_SAVE_QUOTA") or "1").strip().lower()
+    return v in ("1", "true", "yes")
+
+
+def _parse_api_keys() -> list[str]:
+    """Parse GEMINI_API_KEY (or GOOGLE_API_KEY) — supports comma-separated keys for quota rotation."""
+    global _api_keys
+    if _api_keys:
+        return _api_keys
+    _load_env()
+    raw = (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
+    if not raw:
+        return []
+    _api_keys = [k.strip() for k in raw.split(",") if k.strip()]
+    return _api_keys
+
+
+def _create_client_for_key(api_key: str):
+    """Create a Gemini client for the given API key. Returns (client, use_new_sdk) or (False, False)."""
+    try:
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        return client, True
+    except ImportError:
+        pass
+    except Exception as e:
+        _log_error("New SDK (google.genai) failed, will try old SDK.", e)
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        return genai.GenerativeModel(_current_model()), False
+    except Exception as e:
+        _log_error("Could not create Gemini client.", e)
+        return False, False
+
+
 def _get_client():
-    """Lazy-load Gemini client. Prefer new google.genai, fallback to google.generativeai."""
-    global _client, _use_new_sdk
-    if _client is None and _use_new_sdk is None:
-        _load_env()
-        api_key = (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
-        if not api_key:
-            return None
-        # Try new SDK first (google.genai)
-        try:
-            from google import genai
-            client = genai.Client(api_key=api_key)
-            _client = client
-            _use_new_sdk = True
-        except ImportError:
-            _use_new_sdk = False
-        except Exception as e:
-            _log_error("New SDK (google.genai) failed, will try old SDK.", e)
-            _use_new_sdk = False
-        # Fallback to deprecated SDK if new one not used
-        if _client is None or _use_new_sdk is False:
-            _use_new_sdk = False
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=api_key)
-                _client = genai.GenerativeModel(_current_model())
-            except Exception as e:
-                _log_error("Could not create Gemini client.", e)
-                _client = False
-    if _client is False:
+    """Lazy-load Gemini client. Uses first non-exhausted key; supports multiple keys (key1,key2) in .env."""
+    global _client, _use_new_sdk, _client_key_index, _exhausted_key_indices
+    if _client is not None:
+        return _client
+    keys = _parse_api_keys()
+    if not keys:
         return None
-    return _client
+    for i, api_key in enumerate(keys):
+        if i in _exhausted_key_indices:
+            continue
+        _client, _use_new_sdk = _create_client_for_key(api_key)
+        if _client is not False:
+            _client_key_index = i
+            return _client
+    return None
+
+
+def _switch_to_next_key() -> bool:
+    """Mark current key as exhausted and clear client so next _get_client() uses next key. Returns True if more keys exist."""
+    global _client, _client_key_index, _exhausted_key_indices
+    if _client_key_index is not None:
+        _exhausted_key_indices.add(_client_key_index)
+    _client = None
+    _client_key_index = None
+    keys = _parse_api_keys()
+    remaining = [i for i in range(len(keys)) if i not in _exhausted_key_indices]
+    return len(remaining) > 0
 
 
 def _response_to_text_new(response) -> Optional[str]:
@@ -171,6 +242,8 @@ def generate(
     models = _models_to_try() if _use_new_sdk else [_current_model()]
     for model in models:
         for attempt in range(_MAX_429_RETRIES + 1):
+            _wait_for_quota()
+            _record_gemini_call()
             try:
                 out = _generate_once(client, full, model=model if _use_new_sdk else None)
                 if out is not None:
@@ -193,8 +266,24 @@ def generate(
                     break
         if last_error and not (_is_429(last_error) and _is_limit_zero(last_error)):
             break
+    # On 429, try next API key if multiple keys are configured (e.g. GEMINI_API_KEY=key1,key2)
+    if last_error and _is_429(last_error) and _switch_to_next_key():
+        print("[Gemini] Quota exceeded on this key — trying next key from .env...", file=sys.stderr)
+        client = _get_client()
+        if client:
+            _wait_for_quota()
+            _record_gemini_call()
+            try:
+                model = (_last_working_model or _current_model()) if _use_new_sdk else None
+                out = _generate_once(client, full, model=model)
+                if out is not None:
+                    return out
+            except Exception:
+                pass
     _log_error("Generate failed.", last_error)
     if last_error and _is_429(last_error):
+        global _quota_saving_mode
+        _quota_saving_mode = True
         if _is_limit_zero(last_error):
             print(
                 "[Gemini] Quota shows 'limit: 0' — free tier may not be available in your region.\n"
@@ -204,9 +293,11 @@ def generate(
             )
         else:
             print(
-                "[Gemini] Quota exceeded. Get a new key or check billing: https://aistudio.google.com/apikey",
+                "[Gemini] Quota exceeded. Add another key in .env: GEMINI_API_KEY=key1,key2 (each key gets 20/day)",
                 file=sys.stderr,
             )
+            print("  Or get a new key: https://aistudio.google.com/apikey", file=sys.stderr)
+        print("[Gemini] Using quota-saver mode for rest of session (1 call per message).", file=sys.stderr)
     return None
 
 
