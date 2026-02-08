@@ -12,8 +12,8 @@ TOP_K_MEMORIES = 5
 # Compression
 MEMORY_COMPRESSION_THRESHOLD = 50
 
-# Deduplication: skip storing if similarity to existing memory > this
-DUPLICATE_SIMILARITY_THRESHOLD = 0.92
+# Deduplication: skip storing only if very similar (0.95 = avoid dropping distinct facts)
+DUPLICATE_SIMILARITY_THRESHOLD = 0.95
 
 # Database
 DB_PATH = "data/memories.db"
