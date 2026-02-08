@@ -5,7 +5,8 @@
 sentence-transformers>=2.2.0
 numpy>=1.24.0
 
-# Day 4: Gemini API
+# Day 4: Gemini API (new SDK preferred; old one is deprecated)
+google-genai>=1.0.0
 google-generativeai>=0.3.0
 
 # Optional: env variables
