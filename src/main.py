@@ -21,7 +21,7 @@ from memory.extractor import extract_local, extract_with_gemini
 from memory.embeddings import encode, get_backend
 from memory.retrieval import retrieve
 from memory.compression import maybe_compress
-from llm.gemini import generate, is_available
+from llm.gemini import is_available
 from config import (
     MAX_SHORT_TERM_MESSAGES,
     TOP_K_MEMORIES,
@@ -68,19 +68,24 @@ def build_context(short_term: ShortTermBuffer, memories_text: str) -> str:
     return "\n".join(parts)
 
 
+def get_response_local(user_message: str, short_term: ShortTermBuffer) -> str:
+    """Response without calling Gemini: acknowledge message and show relevant memories."""
+    mems = retrieve(user_message, top_k=TOP_K_MEMORIES)
+    parts = ["I've noted that."]
+    if mems:
+        parts.append("Relevant memories: " + "; ".join(f"[{m.category}] {m.content}" for m in mems[:3]))
+    return " ".join(parts)
+
+
 def get_response(user_message: str, short_term: ShortTermBuffer) -> str:
-    """Generate response using Gemini or fallback."""
-    # Retrieve relevant memories
+    """Generate response using Gemini or fallback. (Unused when Gemini is only used for compression.)"""
     mems = retrieve(user_message, top_k=TOP_K_MEMORIES)
     memories_text = "\n".join(f"- [{m.category}] {m.content}" for m in mems) if mems else ""
-
     context = build_context(short_term, memories_text)
     prompt = f"{context}\n\nAssistant:"
-
     response = generate(prompt, system_instruction=SYSTEM_INSTRUCTION)
     if response:
         return response
-    # Fallback when Gemini unavailable
     return _get_fallback_message()
 
 
@@ -166,9 +171,9 @@ def main():
     print("Type /help for commands, 'quit' to exit.\n")
     print(f"(Embeddings: {get_backend()})")
     if has_gemini:
-        print("(Gemini API connected - using AI responses and smart extraction)")
+        print("(Gemini used only when memory is full — for compression. Set GEMINI_API_KEY in .env)")
     else:
-        print("(Gemini API not found - using local fallback. Set GEMINI_API_KEY in .env for full features)")
+        print("(Gemini not configured — compression will be skipped when memory is full. Set GEMINI_API_KEY in .env)")
 
     while True:
         user_input = input("You: ").strip()
@@ -183,18 +188,18 @@ def main():
 
         buffer.add("user", user_input)
 
-        # Extract and store facts
-        stored = process_and_store_facts(user_input, use_gemini=has_gemini)
+        # Extract and store facts (local only — no Gemini per message)
+        stored = process_and_store_facts(user_input, use_gemini=False)
         if stored:
             for s in stored:
                 print(f"  [Stored] [{s['category']}] {s['content']}")
 
-        # Compress if needed
+        # Gemini only when memory is filled: compress old memories (uses GEMINI_API_KEY)
         if maybe_compress():
             print("  [Compressed older memories]")
 
-        # Generate response
-        response = get_response(user_input, buffer)
+        # Response without calling Gemini (per-message replies are local)
+        response = get_response_local(user_input, buffer)
         buffer.add("assistant", response)
 
         print(f"\nAssistant: {response}\n")
