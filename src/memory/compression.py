@@ -6,8 +6,7 @@ from typing import Optional
 from memory.long_term import (
     get_memory_count,
     get_oldest_memories,
-    add_memory,
-    delete_memories,
+    replace_with_compressed,
 )
 from memory.embeddings import encode
 from llm.gemini import summarize_memories
@@ -16,12 +15,12 @@ from config import MEMORY_COMPRESSION_THRESHOLD
 
 def maybe_compress(
     threshold: int = MEMORY_COMPRESSION_THRESHOLD,
-    compress_count: int = 25,
+    compress_count: int = 15,
     db_path: Optional[Path] = None,
 ) -> bool:
     """
     If memory count > threshold, compress oldest memories into a summary.
-    Returns True if compression ran and succeeded.
+    Uses a single atomic transaction so we never delete without storing the summary (no data loss).
     """
     count = get_memory_count(db_path)
     if count < threshold:
@@ -37,13 +36,9 @@ def maybe_compress(
         return False
 
     content = f"[Compressed summary] {summary}"
-    embedding = encode(content)
+    try:
+        embedding = encode(content)
+    except Exception:
+        embedding = None
 
-    add_memory(
-        content=content,
-        category="misc",
-        embedding=embedding,
-        db_path=db_path,
-    )
-    delete_memories([m.id for m in oldest if m.id], db_path)
-    return True
+    return replace_with_compressed(oldest, content, embedding, db_path)
