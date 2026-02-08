@@ -1,0 +1,15 @@
+# Day 1-2: Core
+# (No extra deps for basic chat + SQLite - Python has sqlite3 built-in)
+
+# Day 3: Embeddings
+sentence-transformers>=2.2.0
+numpy>=1.24.0
+
+# Day 4: Gemini API
+google-generativeai>=0.3.0
+
+# Optional: env variables
+python-dotenv>=1.0.0
+
+# Optional: VL-JEPA (Mac/Apple Silicon only - for USE_VLJEPA=1)
+# pip install "mlx>=0.30" "git+https://github.com/JosefAlbers/VL-JEPA.git"

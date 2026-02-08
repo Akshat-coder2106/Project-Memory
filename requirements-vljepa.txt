@@ -1,0 +1,11 @@
+# VL-JEPA embedding backend (Mac / Apple Silicon only)
+# Install with: pip install -r requirements.txt -r requirements-vljepa.txt
+# Then set USE_VLJEPA=1 in .env
+
+mlx>=0.30.0
+transformers>=4.40.0
+huggingface_hub
+Pillow
+
+# VL-JEPA from GitHub
+git+https://github.com/JosefAlbers/VL-JEPA.git
