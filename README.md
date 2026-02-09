@@ -1,50 +1,45 @@
 # Human-Like Long-Term Memory for Conversational AI
 
-Hierarchical memory (short-term + long-term semantic) with category-aware retrieval, VL-JEPA-inspired embeddings, and Gemini-powered extraction/compression.
+Chat app with hierarchical memory (short-term + long-term semantic), category-aware retrieval, and Gemini-powered extraction/compression.
 
-## Quick Start
+## Quick start (one command)
 
 ```bash
 cd "Project - Memory"
 python -m venv .venv
-source .venv/bin/activate   # On Windows: .venv\Scripts\activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+python -m src.api
+```
 
-# Add GEMINI_API_KEY for AI responses (required for full features)
-cp .env.example .env
-# Edit .env and add your key from https://aistudio.google.com/apikey
+Open **http://localhost:5000** in your browser.
 
+## Setup (first time)
+
+1. Copy `.env.example` to `.env` and add your Gemini API key:
+   ```
+   GEMINI_API_KEY=your_key_here
+   ```
+   Get a key at https://aistudio.google.com/apikey
+
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+## Run
+
+```bash
+python -m src.api
+```
+
+- **Chat UI:** http://localhost:5000  
+- **API:** http://localhost:5000/api/chat, /api/messages, /api/memories, /api/health
+
+## CLI (alternative)
+
+For terminal chat instead of the web UI:
+
+```bash
 python -m src.main
-```
-
-Type messages and `quit` to exit.
-
-**CLI commands:** `/help`, `/memories`, `/stats`, `/export`, `/clear`
-
-## What It Does
-
-- **Short-term memory:** Keeps last 10 messages for immediate context
-- **Long-term memory:** Extracts facts (allergies, preferences, travel, etc.) and stores in SQLite
-- **Categories:** personal, food, travel, misc for fast partitioned retrieval
-- **Embeddings:** sentence-transformers (all-MiniLM) in a VL-JEPA-inspired latent space
-- **Retrieval:** Category-aware semantic search with JEPA-style query refinement
-- **Compression:** When memory exceeds 50 items, older ones are summarized via Gemini
-- **Fallbacks:** Works without Gemini using local extraction and deterministic responses
-- **VL-JEPA:** Optional embedding backend (Mac/Apple Silicon) — set `USE_VLJEPA=1` and install `requirements-vljepa.txt`
-
-## Project Structure
-
-```
-src/
-├── main.py            # Chat loop
-├── config.py          # Constants
-├── memory/
-│   ├── short_term.py  # Last N messages
-│   ├── long_term.py   # SQLite storage
-│   ├── extractor.py   # Fact extraction (local + Gemini)
-│   ├── embeddings.py  # Sentence embeddings + JEPA refine
-│   ├── retrieval.py   # Category-aware semantic search
-│   └── compression.py # Summarize old memories
-└── llm/
-    └── gemini.py      # Gemini API + fallback
 ```
