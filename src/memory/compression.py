@@ -9,7 +9,7 @@ from memory.long_term import (
     replace_with_compressed,
 )
 from memory.embeddings import encode
-from llm.gemini import summarize_memories
+from llm.agent_router import summarize_memories
 from config import MEMORY_COMPRESSION_THRESHOLD
 
 

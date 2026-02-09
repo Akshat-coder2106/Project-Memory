@@ -7,7 +7,7 @@ Run from project root: python -m src.main
 import sys
 from pathlib import Path
 
-# Load .env early so GEMINI_API_KEY is available
+# Load .env early so AGENT_ROUTER_API_KEY is available
 sys.path.insert(0, str(Path(__file__).parent))
 try:
     from dotenv import load_dotenv
@@ -17,11 +17,11 @@ except ImportError:
 
 from memory.short_term import ShortTermBuffer
 from memory.long_term import init_db, add_memory, get_memory_count, get_all_memories, delete_memories
-from memory.extractor import extract_local, extract_with_gemini
+from memory.extractor import extract_local, extract_with_agent_router
 from memory.embeddings import encode, get_backend
 from memory.retrieval import retrieve
 from memory.compression import maybe_compress
-from llm.gemini import generate, is_available, is_quota_saving
+from llm.agent_router import generate, is_available, is_quota_saving
 from config import (
     MAX_SHORT_TERM_MESSAGES,
     TOP_K_MEMORIES,
@@ -29,16 +29,16 @@ from config import (
 )
 
 def _get_fallback_message() -> str:
-    """Return helpful message when Gemini is unavailable."""
+    """Return helpful message when Agent Router is unavailable."""
     import os
     from pathlib import Path
-    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    key = os.environ.get("AGENT_ROUTER_API_KEY")
     env_path = Path(__file__).resolve().parent.parent / ".env"
     if not key:
         return (
             "I can't connect to the AI right now. To enable AI responses:\n"
-            f"  1. Create {env_path} with: GEMINI_API_KEY=your_key\n"
-            "  2. Get a free key at https://aistudio.google.com/apikey\n"
+            f"  1. Create {env_path} with: AGENT_ROUTER_API_KEY=your_key\n"
+            "  2. Get an API key from Agent Router\n"
             "  3. Restart the app."
         )
     return "The AI service is temporarily unavailable. I've noted your message—please try again in a moment."
@@ -69,7 +69,7 @@ def build_context(short_term: ShortTermBuffer, memories_text: str) -> str:
 
 
 def get_response(user_message: str, short_term: ShortTermBuffer) -> str:
-    """Generate response using Gemini or fallback."""
+    """Generate response using Agent Router or fallback."""
     mems = retrieve(user_message, top_k=TOP_K_MEMORIES)
     memories_text = "\n".join(f"- [{m.category}] {m.content}" for m in mems) if mems else ""
     context = build_context(short_term, memories_text)
@@ -80,12 +80,12 @@ def get_response(user_message: str, short_term: ShortTermBuffer) -> str:
     return _get_fallback_message()
 
 
-def process_and_store_facts(user_message: str, use_gemini: bool = True) -> list[dict]:
+def process_and_store_facts(user_message: str, use_agent_router: bool = True) -> list[dict]:
     """Extract facts and store them with embeddings. Skip near-duplicates."""
     from config import DUPLICATE_SIMILARITY_THRESHOLD
     from memory.long_term import has_similar_memory
 
-    extracted = extract_with_gemini(user_message) if use_gemini else extract_local(user_message)
+    extracted = extract_with_agent_router(user_message) if use_agent_router else extract_local(user_message)
     stored = []
     for item in extracted:
         content = item["content"]
@@ -159,18 +159,18 @@ def handle_cli_command(cmd: str) -> bool:
 def main():
     init_db()
     buffer = ShortTermBuffer(max_size=MAX_SHORT_TERM_MESSAGES)
-    has_gemini = is_available()
+    has_agent_router = is_available()
 
     print("=== Memory-Enabled Conversational AI ===")
     print("Type /help for commands, 'quit' to exit.\n")
     print(f"(Embeddings: {get_backend()})")
-    if has_gemini:
+    if has_agent_router:
         if is_quota_saving():
-            print("(Gemini API connected - quota-saver mode: 1 call per message to stay within free tier)")
+            print("(Agent Router connected - quota-saver mode: 1 call per message)")
         else:
-            print("(Gemini API connected - using AI responses and smart extraction)")
+            print("(Agent Router connected - using AI responses and smart extraction)")
     else:
-        print("(Gemini API not found - using local fallback. Set GEMINI_API_KEY in .env for full features)")
+        print("(Agent Router not found - using local fallback. Set AGENT_ROUTER_API_KEY in .env for full features)")
 
     while True:
         user_input = input("You: ").strip()
@@ -185,13 +185,13 @@ def main():
 
         buffer.add("user", user_input)
 
-        # Extract and store facts (use local extraction when saving quota — free tier is 20/day)
-        stored = process_and_store_facts(user_input, use_gemini=has_gemini and not is_quota_saving())
+        # Extract and store facts (use local extraction when saving quota)
+        stored = process_and_store_facts(user_input, use_agent_router=has_agent_router and not is_quota_saving())
         if stored:
             for s in stored:
                 print(f"  [Stored] [{s['category']}] {s['content']}")
 
-        # Compress if needed (skip when saving quota to avoid extra Gemini calls)
+        # Compress if needed (skip when saving quota to avoid extra LLM calls)
         if not is_quota_saving() and maybe_compress():
             print("  [Compressed older memories]")
 

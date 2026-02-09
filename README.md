@@ -1,6 +1,6 @@
 # Human-Like Long-Term Memory for Conversational AI
 
-Chat app with hierarchical memory (short-term + long-term semantic), category-aware retrieval, and Gemini-powered extraction/compression.
+Chat app with hierarchical memory (short-term + long-term semantic), category-aware retrieval, and Agent Router-powered extraction/compression.
 
 ## Quick start (one command)
 
@@ -16,11 +16,11 @@ Open **http://localhost:5000** in your browser.
 
 ## Setup (first time)
 
-1. Copy `.env.example` to `.env` and add your Gemini API key:
+1. Copy `.env.example` to `.env` and add your Agent Router API key:
    ```
-   GEMINI_API_KEY=your_key_here
+   AGENT_ROUTER_API_KEY=your_key_here
    ```
-   Get a key at https://aistudio.google.com/apikey
+   Get a key from Agent Router
 
 2. Install dependencies:
    ```bash

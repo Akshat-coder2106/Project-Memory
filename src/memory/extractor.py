@@ -1,4 +1,4 @@
-"""Memory extractor - extracts factual info from user messages (local + Gemini fallback)."""
+"""Memory extractor - extracts factual info from user messages (local + Agent Router fallback)."""
 
 import re
 import json
@@ -64,13 +64,13 @@ def _looks_factual(text: str) -> bool:
     return " is " in text or " are " in text or " have " in text
 
 
-def extract_with_gemini(text: str) -> list[dict]:
+def extract_with_agent_router(text: str) -> list[dict]:
     """
-    Use Gemini to extract facts. Returns list of {content, category}.
+    Use Agent Router to extract facts. Returns list of {content, category}.
     Falls back to local extraction on failure.
     """
     try:
-        from llm.gemini import generate
+        from llm.agent_router import generate
         prompt = f"""From this user message, extract important factual information about the user.
 Output ONLY a JSON array of objects, each with "content" and "category".
 Categories must be one of: {json.dumps(CATEGORIES)}.

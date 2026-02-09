@@ -17,11 +17,11 @@ from flask import Flask, request, jsonify, send_from_directory
 
 from memory.short_term import ShortTermBuffer
 from memory.long_term import init_db, add_memory, get_all_memories, get_memory_count
-from memory.extractor import extract_local, extract_with_gemini
+from memory.extractor import extract_local, extract_with_agent_router
 from memory.embeddings import encode
 from memory.retrieval import retrieve
 from memory.compression import maybe_compress
-from llm.gemini import generate, is_available
+from llm.agent_router import generate, is_available
 from config import (
     MAX_SHORT_TERM_MESSAGES,
     TOP_K_MEMORIES,
@@ -47,8 +47,8 @@ _fallback_count = 0
 def _get_fallback_message():
     import os
     return (
-        "I can't connect to the AI right now. Set GEMINI_API_KEY in .env and restart."
-        if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+        "I can't connect to the AI right now. Set AGENT_ROUTER_API_KEY in .env and restart."
+        if not os.environ.get("AGENT_ROUTER_API_KEY")
         else "The AI service is temporarily unavailable. Please try again in a moment."
     )
 
@@ -61,8 +61,8 @@ def _process_message(user_message: str):
     buffer.add("user", user_message)
 
     # Extract and store
-    has_gemini = is_available()
-    extracted = extract_with_gemini(user_message) if has_gemini else extract_local(user_message)
+    has_agent_router = is_available()
+    extracted = extract_with_agent_router(user_message) if has_agent_router else extract_local(user_message)
     stored = []
     for item in extracted:
         content = item["content"]
