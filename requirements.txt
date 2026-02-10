@@ -13,6 +13,7 @@ python-dotenv>=1.0.0
 
 # Web API + dashboard
 flask>=3.0.0
+gunicorn>=22.0.0
 
 # Optional: VL-JEPA (Mac/Apple Silicon only - for USE_VLJEPA=1)
 # pip install "mlx>=0.30" "git+https://github.com/JosefAlbers/VL-JEPA.git"

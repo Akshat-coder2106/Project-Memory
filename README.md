@@ -39,6 +39,31 @@ Create an account (username + password) on first use, then login to access that 
 - **API:** http://localhost:5000/api/chat, /api/messages, /api/memories, /api/health
 - **Auth API:** /api/auth/register, /api/auth/login, /api/auth/logout, /api/auth/me
 
+## Deploy on Render
+
+This repo now includes `/render.yaml` for one-click deployment.
+
+1. Push this project to GitHub.
+2. In Render, create a new **Blueprint** and select the repo.
+3. Render reads `render.yaml` and creates the web service automatically.
+4. Set required secret:
+   - `OPENROUTER_API_KEY`
+5. Deploy.
+
+If you create the service manually instead of Blueprint:
+- **Build Command:** `pip install -r requirements.txt`
+- **Start Command:** `gunicorn src.api:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120`
+- **Environment Variables:** `OPENROUTER_API_KEY`, `FLASK_SECRET_KEY`, optional `OPENROUTER_MODEL`
+
+### Data Persistence Note
+
+By default the SQLite DB is local file storage and can reset after restart/redeploy on ephemeral instances.
+If you attach persistent storage, set:
+
+```bash
+MEMORY_DB_PATH=/var/data/memories.db
+```
+
 ## CLI (alternative)
 
 For terminal chat instead of the web UI:

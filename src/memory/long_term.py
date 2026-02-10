@@ -1,5 +1,6 @@
 """Long-term semantic memory - SQLite storage with categories."""
 
+import os
 import sqlite3
 import json
 from dataclasses import dataclass
@@ -9,7 +10,8 @@ from typing import Optional
 
 # Resolve DB path relative to project root
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "memories.db"
+_db_env_path = (os.environ.get("MEMORY_DB_PATH") or "").strip()
+DEFAULT_DB_PATH = Path(_db_env_path).expanduser() if _db_env_path else (PROJECT_ROOT / "data" / "memories.db")
 
 
 @dataclass
