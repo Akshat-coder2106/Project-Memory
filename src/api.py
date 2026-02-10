@@ -770,7 +770,27 @@ def chat(user):
         result["thread"] = _get_thread(user["id"], thread["id"])
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        app.logger.exception("chat processing failed: user_id=%s thread_id=%s", user["id"], thread["id"])
+        fallback_reply = "I hit a temporary issue, but I'm still here. Please try again."
+        try:
+            buffer = _get_user_buffer(user["id"], thread["id"], is_temporary=thread["is_temporary"])
+            buffer.add("assistant", fallback_reply)
+            if not thread["is_temporary"]:
+                _store_message(user["id"], thread["id"], "assistant", fallback_reply)
+            _touch_thread(user["id"], thread["id"])
+        except Exception:
+            pass
+        return jsonify({
+            "reply": fallback_reply,
+            "retrieved_memories": [],
+            "latency_ms": 0,
+            "stored_count": 0,
+            "compressed": False,
+            "thread_id": thread["id"],
+            "thread": _get_thread(user["id"], thread["id"]),
+            "degraded": True,
+            "error": str(e),
+        }), 200
 
 
 @app.route("/api/messages", methods=["GET"])

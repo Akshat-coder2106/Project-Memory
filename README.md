@@ -54,6 +54,7 @@ If you create the service manually instead of Blueprint:
 - **Build Command:** `pip install -r requirements.txt`
 - **Start Command:** `gunicorn src.api:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120`
 - **Environment Variables:** `OPENROUTER_API_KEY`, `FLASK_SECRET_KEY`, optional `OPENROUTER_MODEL`
+- **Optional reliability setting on low-memory instances:** `EMBEDDING_BACKEND=lite`
 
 ### Data Persistence Note
 

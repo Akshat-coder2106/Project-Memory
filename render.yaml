@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: project-memory
+    name: project-memory-umesh-ai
     runtime: python
     plan: free
     autoDeploy: true

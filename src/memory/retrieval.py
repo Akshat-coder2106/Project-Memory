@@ -80,18 +80,28 @@ def retrieve(
         return candidates[:top_k]
 
     # Encode query
-    query_emb = encode(query)
+    try:
+        query_emb = encode(query)
+    except Exception:
+        return candidates[:top_k]
 
     # Optional: JEPA-inspired refinement
     if use_jepa_refine and len(with_emb) > 0:
-        memory_embs = [m.embedding for m in with_emb]
-        query_emb = jepa_inspired_refine(query_emb, memory_embs)
+        try:
+            memory_embs = [m.embedding for m in with_emb]
+            query_emb = jepa_inspired_refine(query_emb, memory_embs)
+        except Exception:
+            pass
 
     # Compute similarities and rank
-    scored = [
-        (m, cosine_similarity(query_emb, m.embedding))
-        for m in with_emb
-    ]
+    scored = []
+    for m in with_emb:
+        try:
+            scored.append((m, cosine_similarity(query_emb, m.embedding)))
+        except Exception:
+            continue
+    if not scored:
+        return candidates[:top_k]
     scored.sort(key=lambda x: -x[1])
 
     return [m for m, _ in scored[:top_k]]
