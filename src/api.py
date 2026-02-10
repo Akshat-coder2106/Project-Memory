@@ -35,6 +35,7 @@ from memory.embeddings import encode
 from memory.retrieval import retrieve
 from memory.compression import maybe_compress
 from llm.openrouter import generate, is_available
+from llm.web_search import search_web, should_search_web
 from config import (
     MAX_SHORT_TERM_MESSAGES,
     TOP_K_MEMORIES,
@@ -56,12 +57,17 @@ DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "dashboard"
 
 SYSTEM_INSTRUCTION = """You are a helpful conversational assistant with long-term memory of the user.
 Use the provided "Relevant memories" to personalize your responses. Be concise and natural.
-If memories conflict with what the user just said, prioritize the most recent conversation."""
+If memories conflict with what the user just said, prioritize the most recent conversation.
+If "Live web results" are provided, use them for current/latest info and avoid outdated claims.
+If the user asks for current data and no live results are provided, clearly say live data is unavailable."""
 
 # Session state: short-term buffer per authenticated thread (user_id, thread_id)
 _user_buffers: dict[tuple[int, int], ShortTermBuffer] = {}
 _last_api_success = None
 _fallback_count = 0
+_DEFAULT_CLIENT_ID = "default"
+_CLIENT_ID_HEADER = "X-Client-ID"
+_CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$")
 
 
 _DATETIME_QUERY_RE = re.compile(
@@ -94,6 +100,29 @@ def _db_conn() -> sqlite3.Connection:
 def _utc_now_iso() -> str:
     """UTC ISO timestamp with explicit timezone suffix for correct client parsing."""
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _normalize_client_id(raw: Optional[str]) -> str:
+    text = (raw or "").strip()
+    if not text:
+        return _DEFAULT_CLIENT_ID
+    if _CLIENT_ID_RE.fullmatch(text):
+        return text
+    return _DEFAULT_CLIENT_ID
+
+
+def _request_client_id() -> str:
+    return _normalize_client_id(request.headers.get(_CLIENT_ID_HEADER))
+
+
+def _effective_client_id() -> str:
+    requested = _request_client_id()
+    session_client = _normalize_client_id(session.get("client_id"))
+    if requested != _DEFAULT_CLIENT_ID:
+        return requested
+    if session_client != _DEFAULT_CLIENT_ID:
+        return session_client
+    return _DEFAULT_CLIENT_ID
 
 
 def _is_datetime_request(text: str) -> bool:
@@ -245,16 +274,18 @@ def _create_user(username: str, password: str) -> Tuple[Optional[int], Optional[
         conn.close()
 
 
-def _set_session_user(user_id: int, username: str):
+def _set_session_user(user_id: int, username: str, client_id: str):
     session["user_id"] = user_id
     session["username"] = username
+    session["client_id"] = _normalize_client_id(client_id)
 
 
 def _current_user() -> Optional[Dict]:
     uid = session.get("user_id")
     uname = session.get("username")
+    client_id = _normalize_client_id(session.get("client_id"))
     if uid and uname:
-        return {"id": uid, "username": uname}
+        return {"id": uid, "username": uname, "client_id": client_id}
     return None
 
 
@@ -287,7 +318,7 @@ def _row_to_thread_payload(row: sqlite3.Row) -> dict:
     }
 
 
-def _get_thread(user_id: int, thread_id: int) -> Optional[dict]:
+def _get_thread(user_id: int, thread_id: int, client_id: str) -> Optional[dict]:
     conn = _db_conn()
     row = conn.execute(
         """
@@ -317,15 +348,15 @@ def _get_thread(user_id: int, thread_id: int) -> Optional[dict]:
                 WHERE m.user_id = t.user_id AND m.thread_id = t.id
             ) AS message_count
         FROM chat_threads t
-        WHERE t.user_id = ? AND t.id = ?
+        WHERE t.user_id = ? AND t.device_id = ? AND t.id = ?
         """,
-        (user_id, thread_id),
+        (user_id, client_id, thread_id),
     ).fetchone()
     conn.close()
     return _row_to_thread_payload(row) if row else None
 
 
-def _list_threads(user_id: int) -> list[dict]:
+def _list_threads(user_id: int, client_id: str) -> list[dict]:
     conn = _db_conn()
     rows = conn.execute(
         """
@@ -355,16 +386,20 @@ def _list_threads(user_id: int) -> list[dict]:
                 WHERE m.user_id = t.user_id AND m.thread_id = t.id
             ) AS message_count
         FROM chat_threads t
-        WHERE t.user_id = ?
+        WHERE t.user_id = ? AND t.device_id = ?
         ORDER BY t.updated_at DESC, t.id DESC
         """,
-        (user_id,),
+        (user_id, client_id),
     ).fetchall()
     conn.close()
     return [_row_to_thread_payload(r) for r in rows]
 
 
-def _backfill_legacy_rows(user_id: int, default_thread_id: int):
+def _backfill_legacy_rows(user_id: int, default_thread_id: int, client_id: str):
+    # Legacy rows were created before device scoping existed. Keep backfill only
+    # for default client to avoid cross-device data reassignment.
+    if _normalize_client_id(client_id) != _DEFAULT_CLIENT_ID:
+        return
     conn = _db_conn()
     conn.execute(
         "UPDATE messages SET thread_id = ? WHERE user_id = ? AND thread_id IS NULL",
@@ -378,52 +413,83 @@ def _backfill_legacy_rows(user_id: int, default_thread_id: int):
     conn.close()
 
 
-def _create_thread(user_id: int, title: str = "New chat", is_temporary: bool = False) -> dict:
+def _create_thread(
+    user_id: int,
+    client_id: str,
+    title: str = "New chat",
+    is_temporary: bool = False,
+) -> dict:
     now = _utc_now_iso()
     conn = _db_conn()
     cursor = conn.execute(
         """
-        INSERT INTO chat_threads (user_id, title, is_temporary, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO chat_threads (user_id, device_id, title, is_temporary, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (user_id, _sanitize_thread_title(title), 1 if is_temporary else 0, now, now),
+        (
+            user_id,
+            _normalize_client_id(client_id),
+            _sanitize_thread_title(title),
+            1 if is_temporary else 0,
+            now,
+            now,
+        ),
     )
     thread_id = cursor.lastrowid
     conn.commit()
     conn.close()
-    return _get_thread(user_id, thread_id)
+    return _get_thread(user_id, thread_id, client_id)
 
 
-def _ensure_default_thread(user_id: int) -> int:
+def _ensure_default_thread(user_id: int, client_id: str) -> int:
+    normalized_client_id = _normalize_client_id(client_id)
     conn = _db_conn()
     row = conn.execute(
-        "SELECT id FROM chat_threads WHERE user_id = ? ORDER BY id ASC LIMIT 1",
-        (user_id,),
+        "SELECT id FROM chat_threads WHERE user_id = ? AND device_id = ? ORDER BY id ASC LIMIT 1",
+        (user_id, normalized_client_id),
     ).fetchone()
+    if not row and normalized_client_id != _DEFAULT_CLIENT_ID:
+        # One-time migration path for pre-device-scope rows.
+        legacy_row = conn.execute(
+            "SELECT id FROM chat_threads WHERE user_id = ? AND device_id = ? ORDER BY id ASC LIMIT 1",
+            (user_id, _DEFAULT_CLIENT_ID),
+        ).fetchone()
+        if legacy_row:
+            conn.execute(
+                "UPDATE chat_threads SET device_id = ? WHERE user_id = ? AND device_id = ?",
+                (normalized_client_id, user_id, _DEFAULT_CLIENT_ID),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT id FROM chat_threads WHERE user_id = ? AND device_id = ? ORDER BY id ASC LIMIT 1",
+                (user_id, normalized_client_id),
+            ).fetchone()
     if row:
         thread_id = int(row["id"])
     else:
         now = _utc_now_iso()
         cursor = conn.execute(
             """
-            INSERT INTO chat_threads (user_id, title, is_temporary, created_at, updated_at)
-            VALUES (?, ?, 0, ?, ?)
+            INSERT INTO chat_threads (user_id, device_id, title, is_temporary, created_at, updated_at)
+            VALUES (?, ?, ?, 0, ?, ?)
             """,
-            (user_id, "New chat", now, now),
+            (user_id, normalized_client_id, "New chat", now, now),
         )
         thread_id = int(cursor.lastrowid)
         conn.commit()
     conn.close()
-    _backfill_legacy_rows(user_id, thread_id)
+    _backfill_legacy_rows(user_id, thread_id, normalized_client_id)
     return thread_id
 
 
 def _touch_thread(
     user_id: int,
     thread_id: int,
+    client_id: str,
     first_user_message: Optional[str] = None,
 ):
     now = _utc_now_iso()
+    normalized_client_id = _normalize_client_id(client_id)
     conn = _db_conn()
     if first_user_message:
         title_hint = _title_from_first_message(first_user_message)
@@ -436,35 +502,45 @@ def _touch_thread(
                     ELSE title
                 END,
                 updated_at = ?
-            WHERE user_id = ? AND id = ?
+            WHERE user_id = ? AND device_id = ? AND id = ?
             """,
-            (title_hint, now, user_id, thread_id),
+            (title_hint, now, user_id, normalized_client_id, thread_id),
         )
     else:
         conn.execute(
-            "UPDATE chat_threads SET updated_at = ? WHERE user_id = ? AND id = ?",
-            (now, user_id, thread_id),
+            "UPDATE chat_threads SET updated_at = ? WHERE user_id = ? AND device_id = ? AND id = ?",
+            (now, user_id, normalized_client_id, thread_id),
         )
     conn.commit()
     conn.close()
 
 
-def _delete_thread(user_id: int, thread_id: int) -> Optional[int]:
+def _delete_thread(user_id: int, thread_id: int, client_id: str) -> Optional[int]:
+    normalized_client_id = _normalize_client_id(client_id)
     conn = _db_conn()
     row = conn.execute(
-        "SELECT id FROM chat_threads WHERE user_id = ? AND id = ?",
-        (user_id, thread_id),
+        "SELECT id FROM chat_threads WHERE user_id = ? AND device_id = ? AND id = ?",
+        (user_id, normalized_client_id, thread_id),
     ).fetchone()
     if not row:
         conn.close()
         return None
     conn.execute("DELETE FROM messages WHERE user_id = ? AND thread_id = ?", (user_id, thread_id))
     conn.execute("DELETE FROM memories WHERE user_id = ? AND thread_id = ?", (user_id, thread_id))
-    conn.execute("DELETE FROM chat_threads WHERE user_id = ? AND id = ?", (user_id, thread_id))
+    conn.execute(
+        "DELETE FROM chat_threads WHERE user_id = ? AND device_id = ? AND id = ?",
+        (user_id, normalized_client_id, thread_id),
+    )
     conn.commit()
     next_row = conn.execute(
-        "SELECT id FROM chat_threads WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1",
-        (user_id,),
+        """
+        SELECT id
+        FROM chat_threads
+        WHERE user_id = ? AND device_id = ?
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (user_id, normalized_client_id),
     ).fetchone()
     if next_row:
         next_thread_id = int(next_row["id"])
@@ -472,10 +548,10 @@ def _delete_thread(user_id: int, thread_id: int) -> Optional[int]:
         now = _utc_now_iso()
         cursor = conn.execute(
             """
-            INSERT INTO chat_threads (user_id, title, is_temporary, created_at, updated_at)
-            VALUES (?, ?, 0, ?, ?)
+            INSERT INTO chat_threads (user_id, device_id, title, is_temporary, created_at, updated_at)
+            VALUES (?, ?, ?, 0, ?, ?)
             """,
-            (user_id, "New chat", now, now),
+            (user_id, normalized_client_id, "New chat", now, now),
         )
         next_thread_id = int(cursor.lastrowid)
         conn.commit()
@@ -564,19 +640,27 @@ def _login_required(fn):
         user = _current_user()
         if not user:
             return _unauthorized()
+        client_id = _effective_client_id()
+        if _normalize_client_id(session.get("client_id")) != client_id:
+            session["client_id"] = client_id
+        user["client_id"] = client_id
         return fn(user, *args, **kwargs)
     return wrapper
 
 
-def _resolve_thread(user_id: int, raw_thread_id) -> Tuple[Optional[dict], Optional[Tuple[dict, int]]]:
+def _resolve_thread(
+    user_id: int,
+    client_id: str,
+    raw_thread_id,
+) -> Tuple[Optional[dict], Optional[Tuple[dict, int]]]:
     if raw_thread_id in (None, ""):
-        thread_id = _ensure_default_thread(user_id)
+        thread_id = _ensure_default_thread(user_id, client_id)
     else:
         try:
             thread_id = int(raw_thread_id)
         except (TypeError, ValueError):
             return None, ({"error": "Invalid thread_id."}, 400)
-    thread = _get_thread(user_id, thread_id)
+    thread = _get_thread(user_id, thread_id, client_id)
     if not thread:
         return None, ({"error": "Thread not found."}, 404)
     return thread, None
@@ -585,6 +669,7 @@ def _resolve_thread(user_id: int, raw_thread_id) -> Tuple[Optional[dict], Option
 def _process_message(
     user_id: int,
     thread_id: int,
+    client_id: str,
     user_message: str,
     store_data: bool = True,
 ):
@@ -600,10 +685,11 @@ def _process_message(
         _touch_thread(
             user_id,
             thread_id,
+            client_id,
             first_user_message=user_message if is_first_message else None,
         )
     else:
-        _touch_thread(user_id, thread_id)
+        _touch_thread(user_id, thread_id, client_id)
 
     # Deterministic answer for current date/time queries (no model call needed).
     if _is_datetime_request(user_message):
@@ -611,7 +697,7 @@ def _process_message(
         buffer.add("assistant", response)
         if store_data:
             _store_message(user_id, thread_id, "assistant", response)
-        _touch_thread(user_id, thread_id)
+        _touch_thread(user_id, thread_id, client_id)
         latency_ms = int((time.perf_counter() - start) * 1000)
         return {
             "reply": response,
@@ -625,6 +711,9 @@ def _process_message(
     stored = []
     compressed = False
     mems = []
+    web_results = []
+    if should_search_web(user_message):
+        web_results = search_web(user_message)
     if store_data:
         # Extract and store
         has_ai = is_available()
@@ -659,8 +748,29 @@ def _process_message(
         # Retrieve at user scope so facts learned in one chat are available in other chats.
         mems = retrieve(user_message, top_k=TOP_K_MEMORIES, user_id=user_id, thread_id=None)
 
+    web_text = ""
+    if web_results:
+        lines = []
+        for idx, item in enumerate(web_results, start=1):
+            title = str(item.get("title") or "").strip()
+            snippet = str(item.get("snippet") or "").strip()
+            url = str(item.get("url") or "").strip()
+            block = [f"{idx}. {title or 'Result'}"]
+            if snippet:
+                block.append(f"   {snippet}")
+            if url:
+                block.append(f"   Source: {url}")
+            lines.append("\n".join(block))
+        if lines:
+            web_text = "Live web results:\n" + "\n".join(lines)
+
     memories_text = "\n".join(f"- [{m.category}] {m.content}" for m in mems) if mems else ""
-    context = f"Relevant memories:\n{memories_text}\n\nRecent conversation:\n{buffer.format_for_context()}"
+    context_parts = []
+    if web_text:
+        context_parts.append(web_text)
+    context_parts.append(f"Relevant memories:\n{memories_text}")
+    context_parts.append(f"Recent conversation:\n{buffer.format_for_context()}")
+    context = "\n\n".join(context_parts)
     prompt = f"{context}\n\nUser: {user_message}\n\nAssistant:"
 
     response = generate(prompt, system_instruction=SYSTEM_INSTRUCTION)
@@ -673,7 +783,7 @@ def _process_message(
     buffer.add("assistant", response)
     if store_data:
         _store_message(user_id, thread_id, "assistant", response)
-    _touch_thread(user_id, thread_id)
+    _touch_thread(user_id, thread_id, client_id)
     latency_ms = int((time.perf_counter() - start) * 1000)
 
     return {
@@ -682,6 +792,7 @@ def _process_message(
             {"content": m.content, "category": m.category, "created_at": m.created_at.isoformat() if m.created_at else None}
             for m in mems
         ],
+        "web_result_count": len(web_results),
         "latency_ms": latency_ms,
         "stored_count": len(stored),
         "compressed": compressed,
@@ -698,9 +809,15 @@ def register():
     user_id, create_err = _create_user(username, password)
     if create_err:
         return jsonify({"error": create_err}), 409
-    default_thread = _create_thread(user_id, title="New chat", is_temporary=False)
-    _backfill_legacy_rows(user_id, default_thread["id"])
-    _set_session_user(user_id, username)
+    client_id = _effective_client_id()
+    default_thread = _create_thread(
+        user_id,
+        client_id,
+        title="New chat",
+        is_temporary=False,
+    )
+    _backfill_legacy_rows(user_id, default_thread["id"], client_id)
+    _set_session_user(user_id, username, client_id)
     return jsonify({
         "user": {"id": user_id, "username": username},
         "default_thread_id": default_thread["id"],
@@ -717,8 +834,9 @@ def login():
     row = _find_user_by_username(username)
     if not row or not check_password_hash(row["password_hash"], password):
         return jsonify({"error": "Invalid username or password."}), 401
-    default_thread_id = _ensure_default_thread(row["id"])
-    _set_session_user(row["id"], row["username"])
+    client_id = _effective_client_id()
+    default_thread_id = _ensure_default_thread(row["id"], client_id)
+    _set_session_user(row["id"], row["username"], client_id)
     return jsonify({
         "user": {"id": row["id"], "username": row["username"]},
         "default_thread_id": default_thread_id,
@@ -741,10 +859,13 @@ def auth_me():
     user = _current_user()
     if not user:
         return jsonify({"authenticated": False, "user": None})
-    default_thread_id = _ensure_default_thread(user["id"])
+    client_id = _effective_client_id()
+    session["client_id"] = client_id
+    user["client_id"] = client_id
+    default_thread_id = _ensure_default_thread(user["id"], client_id)
     return jsonify({
         "authenticated": True,
-        "user": user,
+        "user": {"id": user["id"], "username": user["username"]},
         "default_thread_id": default_thread_id,
     })
 
@@ -756,7 +877,7 @@ def chat(user):
     message = (data.get("message") or "").strip()
     if not message:
         return jsonify({"error": "Message is required"}), 400
-    thread, thread_err = _resolve_thread(user["id"], data.get("thread_id"))
+    thread, thread_err = _resolve_thread(user["id"], user["client_id"], data.get("thread_id"))
     if thread_err:
         payload, code = thread_err
         return jsonify(payload), code
@@ -764,10 +885,11 @@ def chat(user):
         result = _process_message(
             user_id=user["id"],
             thread_id=thread["id"],
+            client_id=user["client_id"],
             user_message=message,
             store_data=not thread["is_temporary"],
         )
-        result["thread"] = _get_thread(user["id"], thread["id"])
+        result["thread"] = _get_thread(user["id"], thread["id"], user["client_id"])
         return jsonify(result)
     except Exception as e:
         app.logger.exception("chat processing failed: user_id=%s thread_id=%s", user["id"], thread["id"])
@@ -777,7 +899,7 @@ def chat(user):
             buffer.add("assistant", fallback_reply)
             if not thread["is_temporary"]:
                 _store_message(user["id"], thread["id"], "assistant", fallback_reply)
-            _touch_thread(user["id"], thread["id"])
+            _touch_thread(user["id"], thread["id"], user["client_id"])
         except Exception:
             pass
         return jsonify({
@@ -787,7 +909,7 @@ def chat(user):
             "stored_count": 0,
             "compressed": False,
             "thread_id": thread["id"],
-            "thread": _get_thread(user["id"], thread["id"]),
+            "thread": _get_thread(user["id"], thread["id"], user["client_id"]),
             "degraded": True,
             "error": str(e),
         }), 200
@@ -796,7 +918,7 @@ def chat(user):
 @app.route("/api/messages", methods=["GET"])
 @_login_required
 def get_messages(user):
-    thread, thread_err = _resolve_thread(user["id"], request.args.get("thread_id"))
+    thread, thread_err = _resolve_thread(user["id"], user["client_id"], request.args.get("thread_id"))
     if thread_err:
         payload, code = thread_err
         return jsonify(payload), code
@@ -818,8 +940,8 @@ def get_messages(user):
 @app.route("/api/threads", methods=["GET"])
 @_login_required
 def get_threads(user):
-    _ensure_default_thread(user["id"])
-    return jsonify({"threads": _list_threads(user["id"])})
+    _ensure_default_thread(user["id"], user["client_id"])
+    return jsonify({"threads": _list_threads(user["id"], user["client_id"])})
 
 
 @app.route("/api/threads", methods=["POST"])
@@ -829,20 +951,20 @@ def create_thread(user):
     is_temporary = bool(data.get("temporary"))
     default_title = "Temporary chat" if is_temporary else "New chat"
     title = _sanitize_thread_title(data.get("title") or default_title)
-    thread = _create_thread(user["id"], title=title, is_temporary=is_temporary)
+    thread = _create_thread(user["id"], user["client_id"], title=title, is_temporary=is_temporary)
     return jsonify({"thread": thread}), 201
 
 
 @app.route("/api/threads/<int:thread_id>", methods=["DELETE"])
 @_login_required
 def delete_thread(user, thread_id: int):
-    next_thread_id = _delete_thread(user["id"], thread_id)
+    next_thread_id = _delete_thread(user["id"], thread_id, user["client_id"])
     if next_thread_id is None:
         return jsonify({"error": "Thread not found."}), 404
     return jsonify({
         "ok": True,
         "next_thread_id": next_thread_id,
-        "threads": _list_threads(user["id"]),
+        "threads": _list_threads(user["id"], user["client_id"]),
     })
 
 
@@ -855,7 +977,7 @@ def get_memories(user):
     thread_id = None
     raw_thread_id = request.args.get("thread_id")
     if raw_thread_id not in (None, ""):
-        thread, thread_err = _resolve_thread(user["id"], raw_thread_id)
+        thread, thread_err = _resolve_thread(user["id"], user["client_id"], raw_thread_id)
         if thread_err:
             payload, code = thread_err
             return jsonify(payload), code
@@ -891,7 +1013,7 @@ def health(user):
     thread_id = None
     raw_thread_id = request.args.get("thread_id")
     if raw_thread_id not in (None, ""):
-        thread, thread_err = _resolve_thread(user["id"], raw_thread_id)
+        thread, thread_err = _resolve_thread(user["id"], user["client_id"], raw_thread_id)
         if thread_err:
             payload, code = thread_err
             return jsonify(payload), code

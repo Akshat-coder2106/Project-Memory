@@ -14,6 +14,7 @@ pip install -r requirements.txt
 
 Open **http://localhost:5000** in your browser.
 Create an account (username + password) on first use, then login to access that user's memories/chat history.
+Threads are device-scoped by default, so the same account can keep separate chat lists on different devices.
 
 ## Setup (first time)
 
@@ -21,6 +22,7 @@ Create an account (username + password) on first use, then login to access that 
    ```bash
    OPENROUTER_API_KEY=sk-or-your_key_here
    OPENROUTER_MODEL=openai/gpt-4o-mini
+   ENABLE_WEB_SEARCH=1
    ```
    Get a key at https://openrouter.ai/keys
 
@@ -54,6 +56,7 @@ If you create the service manually instead of Blueprint:
 - **Build Command:** `pip install -r requirements.txt`
 - **Start Command:** `gunicorn src.api:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120`
 - **Environment Variables:** `OPENROUTER_API_KEY`, `FLASK_SECRET_KEY`, optional `OPENROUTER_MODEL`
+- **Optional live web data:** `ENABLE_WEB_SEARCH=1` (default on), `WEB_SEARCH_MAX_RESULTS=5`
 - **Optional reliability setting on low-memory instances:** `EMBEDDING_BACKEND=lite`
 
 ### Data Persistence Note

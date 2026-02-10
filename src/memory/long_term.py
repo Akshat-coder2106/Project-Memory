@@ -89,6 +89,7 @@ def init_db(db_path: Path = None) -> None:
         CREATE TABLE IF NOT EXISTS chat_threads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
+            device_id TEXT NOT NULL DEFAULT 'default',
             title TEXT NOT NULL,
             is_temporary INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL,
@@ -105,6 +106,9 @@ def init_db(db_path: Path = None) -> None:
         conn.execute("ALTER TABLE messages ADD COLUMN thread_id INTEGER")
     if not _column_exists(conn, "chat_threads", "is_temporary"):
         conn.execute("ALTER TABLE chat_threads ADD COLUMN is_temporary INTEGER NOT NULL DEFAULT 0")
+    if not _column_exists(conn, "chat_threads", "device_id"):
+        conn.execute("ALTER TABLE chat_threads ADD COLUMN device_id TEXT NOT NULL DEFAULT 'default'")
+    conn.execute("UPDATE chat_threads SET device_id = 'default' WHERE device_id IS NULL OR TRIM(device_id) = ''")
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id)")
@@ -117,6 +121,9 @@ def init_db(db_path: Path = None) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_user_category ON memories(user_id, category)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_user_thread_category ON memories(user_id, thread_id, category)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_threads_user_updated ON chat_threads(user_id, updated_at)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_threads_user_device_updated ON chat_threads(user_id, device_id, updated_at)"
+    )
     conn.commit()
     conn.close()
 

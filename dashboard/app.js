@@ -4,6 +4,31 @@
 
 const API_BASE = "";
 const MOBILE_BREAKPOINT = 1024;
+const CLIENT_ID_STORAGE_KEY = "memory_client_id_v1";
+
+function createClientId() {
+  if (window.crypto && window.crypto.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return `client_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getClientId() {
+  const valid = /^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$/;
+  try {
+    const existing = (localStorage.getItem(CLIENT_ID_STORAGE_KEY) || "").trim();
+    if (valid.test(existing)) return existing;
+    const created = createClientId();
+    localStorage.setItem(CLIENT_ID_STORAGE_KEY, created);
+    return created;
+  } catch (_) {
+    return "default";
+  }
+}
+
+const CLIENT_ID = getClientId();
 
 const state = {
   user: null,
@@ -65,7 +90,11 @@ function formatThreadTime(ts) {
 async function api(path, options = {}) {
   const res = await fetch(`${API_BASE || ""}${path}`, {
     credentials: "same-origin",
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Client-ID": CLIENT_ID,
+      ...options.headers,
+    },
     ...options,
   });
   const raw = await res.text();
