@@ -159,7 +159,7 @@ Top-K memories → Build context → Ready for LLM
 #### Tasks
 1. **Gemini API integration** (1–2 hr)
    - Get API key from Google AI Studio
-   - Use OpenAI-compatible SDK (Agent Router)
+   - Use OpenAI-compatible SDK (OpenRouter)
    - Build prompt: system (instructions) + short-term context + retrieved memories + user message
    - Call Gemini → stream or get response
 
@@ -199,7 +199,7 @@ New memories → Count > 50? → Try compress via Gemini : Keep as is
 Project - Memory/
 ├── BUILD_PLAN.md          # This file
 ├── requirements.txt
-├── .env                   # AGENT_ROUTER_API_KEY (gitignore this!)
+├── .env                   # OPENROUTER_API_KEY (gitignore this!)
 ├── src/
 │   ├── __init__.py
 │   ├── main.py            # Entry point, chat loop
@@ -214,7 +214,7 @@ Project - Memory/
 │   │   └── compression.py # Summarize old memories
 │   └── llm/
 │       ├── __init__.py
-│       └── agent_router.py# Agent Router API + fallback
+│       └── openrouter.py  # OpenRouter API + fallback
 ├── data/
 │   └── memories.db        # SQLite DB (gitignore)
 └── tests/
@@ -255,7 +255,7 @@ Project - Memory/
    - Check: `git --version`
 
 3. **Google AI Studio account** (for Day 4)  
-   - https://agentrouter.org/  
+   - https://openrouter.ai/  
    - Create API key
 
 4. **~2GB disk** for models (sentence-transformers downloads once)

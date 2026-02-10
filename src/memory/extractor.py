@@ -1,4 +1,4 @@
-"""Memory extractor - extracts factual info from user messages (local + Agent Router fallback)."""
+"""Memory extractor - extracts factual info from user messages (local + OpenRouter fallback)."""
 
 import re
 import json
@@ -64,13 +64,13 @@ def _looks_factual(text: str) -> bool:
     return " is " in text or " are " in text or " have " in text
 
 
-def extract_with_agent_router(text: str) -> list[dict]:
+def extract_with_openrouter(text: str) -> list[dict]:
     """
-    Use Agent Router to extract facts. Returns list of {content, category}.
+    Use OpenRouter to extract facts. Returns list of {content, category}.
     Falls back to local extraction on failure.
     """
     try:
-        from llm.agent_router import generate
+        from llm.openrouter import generate
         prompt = f"""From this user message, extract important factual information about the user.
 Output ONLY a JSON array of objects, each with "content" and "category".
 Categories must be one of: {json.dumps(CATEGORIES)}.
