@@ -13,6 +13,7 @@ python -m src.api
 ```
 
 Open **http://localhost:5000** in your browser.
+Create an account (username + password) on first use, then login to access that user's memories/chat history.
 
 ## Setup (first time)
 
@@ -35,6 +36,7 @@ python -m src.api
 
 - **Chat UI:** http://localhost:5000  
 - **API:** http://localhost:5000/api/chat, /api/messages, /api/memories, /api/health
+- **Auth API:** /api/auth/register, /api/auth/login, /api/auth/logout, /api/auth/me
 
 ## CLI (alternative)
 

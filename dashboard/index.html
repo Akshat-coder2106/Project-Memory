@@ -3,66 +3,159 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#060910">
     <title>Memory · Chat Interface</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Rethink+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Rethink+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="grain-overlay"></div>
     <div class="ambient-gradient"></div>
-    
-    <div class="chat-app">
-        <header class="chat-header">
-            <div class="logo-container">
-                <div class="logo-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="10"/>
-                        <circle cx="12" cy="12" r="3"/>
-                    </svg>
-                </div>
-                <span class="logo">Memory</span>
-            </div>
-            <div class="status-indicator">
-                <span class="status-dot"></span>
-                <span class="status-text">Active</span>
-            </div>
-        </header>
 
-        <main class="chat-main">
-            <div class="messages" id="chat-messages">
-                <div class="welcome" id="welcome">
-                    <div class="welcome-badge">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                            <path d="M2 17l10 5 10-5"/>
-                            <path d="M2 12l10 5 10-5"/>
-                        </svg>
+    <div class="auth-screen" id="auth-screen">
+        <div class="auth-card">
+            <div class="auth-view" id="auth-view-choice">
+                <div class="auth-badge">Memory Access</div>
+                <h1 class="auth-title">Continue</h1>
+                <p class="auth-subtitle">Choose how you want to access your memory ID.</p>
+                <div class="auth-choice-actions">
+                    <button type="button" class="auth-button auth-button-primary" id="go-signin">Sign In</button>
+                    <button type="button" class="auth-button" id="go-signup">Sign Up</button>
+                </div>
+                <p class="auth-message" id="auth-choice-message"></p>
+            </div>
+
+            <div class="auth-view is-hidden" id="auth-view-signin">
+                <button type="button" class="auth-back" id="signin-back">Back</button>
+                <div class="auth-badge">Sign In</div>
+                <h1 class="auth-title">Welcome Back</h1>
+                <p class="auth-subtitle">Enter your username and password to access your account.</p>
+                <form class="auth-form" id="signin-form">
+                    <label class="auth-label" for="signin-username">Username</label>
+                    <input id="signin-username" class="auth-input" type="text" autocomplete="username" minlength="3" maxlength="40" required>
+                    <label class="auth-label" for="signin-password">Password</label>
+                    <input id="signin-password" class="auth-input" type="password" autocomplete="current-password" minlength="6" required>
+                    <div class="auth-actions">
+                        <button type="submit" class="auth-button auth-button-primary" id="signin-btn">Sign In</button>
                     </div>
-                    <h1 class="welcome-title">Welcome to the chat box</h1>
-                    <p class="welcome-sub">Start a conversation — I'll remember what you share.</p>
-                </div>
+                </form>
+                <p class="auth-message" id="auth-signin-message"></p>
             </div>
 
-            <div class="input-area">
-                <form class="input-form" id="chat-form">
-                    <input 
-                        type="text" 
-                        placeholder="Type a message…" 
-                        aria-label="Message" 
-                        id="chat-input" 
-                        autocomplete="off"
-                        spellcheck="true"
-                    >
-                    <button type="submit" aria-label="Send message" id="send-btn">
-                        <svg class="send-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+            <div class="auth-view is-hidden" id="auth-view-signup">
+                <button type="button" class="auth-back" id="signup-back">Back</button>
+                <div class="auth-badge">Sign Up</div>
+                <h1 class="auth-title">Create Account</h1>
+                <p class="auth-subtitle">Create your username and password for a new memory ID.</p>
+                <form class="auth-form" id="signup-form">
+                    <label class="auth-label" for="signup-username">Username</label>
+                    <input id="signup-username" class="auth-input" type="text" autocomplete="username" minlength="3" maxlength="40" required>
+                    <label class="auth-label" for="signup-password">Password</label>
+                    <input id="signup-password" class="auth-input" type="password" autocomplete="new-password" minlength="6" required>
+                    <label class="auth-label" for="signup-confirm-password">Confirm Password</label>
+                    <input id="signup-confirm-password" class="auth-input" type="password" autocomplete="new-password" minlength="6" required>
+                    <div class="auth-actions">
+                        <button type="submit" class="auth-button auth-button-primary" id="signup-btn">Sign Up</button>
+                    </div>
+                </form>
+                <p class="auth-message" id="auth-signup-message"></p>
+            </div>
+        </div>
+    </div>
+
+    <div class="chat-app is-hidden" id="chat-app">
+        <button class="sidebar-overlay is-hidden" id="sidebar-overlay" type="button" aria-label="Close thread sidebar"></button>
+
+        <aside class="chat-sidebar" id="chat-sidebar">
+            <div class="sidebar-head">
+                <div class="sidebar-title">Threads</div>
+                <button class="sidebar-icon-btn" id="sidebar-collapse-btn" type="button" aria-label="Collapse sidebar">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M15 18l-6-6 6-6"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="sidebar-actions">
+                <button class="sidebar-action sidebar-action-primary" id="new-chat-btn" type="button">+ New chat</button>
+                <button class="sidebar-action" id="new-temp-chat-btn" type="button">+ Temporary</button>
+            </div>
+            <div class="sidebar-subtitle">Your Chats</div>
+            <div class="thread-list" id="thread-list"></div>
+        </aside>
+
+        <div class="chat-content" id="chat-content">
+            <header class="chat-header">
+                <div class="logo-container">
+                    <button class="sidebar-icon-btn" id="sidebar-toggle-btn" type="button" aria-label="Toggle thread sidebar">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
                         </svg>
                     </button>
-                </form>
-            </div>
-        </main>
+                    <div class="logo-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    </div>
+                    <span class="logo">Memory</span>
+                </div>
+                <div class="header-controls">
+                    <div class="status-indicator">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Active</span>
+                    </div>
+                    <div class="thread-pill" id="thread-pill">New chat</div>
+                    <div class="mode-pill" id="mode-pill">Stored</div>
+                    <div class="user-pill" id="user-pill">@user</div>
+                    <button class="logout-btn" id="logout-btn" type="button">Logout</button>
+                </div>
+            </header>
+
+            <main class="chat-main">
+                <div class="messages" id="chat-messages">
+                    <div class="welcome" id="welcome">
+                        <div class="welcome-badge">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                <path d="M2 17l10 5 10-5"/>
+                                <path d="M2 12l10 5 10-5"/>
+                            </svg>
+                        </div>
+                        <h1 class="welcome-title">Welcome to the chat box</h1>
+                        <p class="welcome-sub" id="welcome-sub">Start a conversation — I'll remember what you share.</p>
+                    </div>
+                </div>
+                <button class="scroll-bottom-btn is-hidden" id="scroll-bottom-btn" type="button" aria-label="Scroll to latest">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 5v14"></path>
+                        <path d="m19 12-7 7-7-7"></path>
+                    </svg>
+                    Latest
+                </button>
+
+                <div class="input-area">
+                    <form class="input-form" id="chat-form">
+                        <input 
+                            type="text" 
+                            placeholder="Type a message…" 
+                            aria-label="Message" 
+                            id="chat-input" 
+                            autocomplete="off"
+                            spellcheck="true"
+                        >
+                        <button type="submit" aria-label="Send message" id="send-btn">
+                            <svg class="send-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                            </svg>
+                        </button>
+                    </form>
+                </div>
+            </main>
+        </div>
     </div>
 
     <script src="app.js"></script>

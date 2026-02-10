@@ -34,6 +34,8 @@ def retrieve(
     category: Optional[str] = None,
     use_jepa_refine: bool = True,
     db_path=None,
+    user_id: Optional[int] = None,
+    thread_id: Optional[int] = None,
 ) -> list[Memory]:
     """
     Category-aware retrieval:
@@ -46,13 +48,22 @@ def retrieve(
 
     # Fetch candidates
     if category and category in CATEGORIES:
-        candidates = get_memories_by_category(category, db_path)
+        candidates = get_memories_by_category(
+            category,
+            db_path=db_path,
+            user_id=user_id,
+            thread_id=thread_id,
+        )
     else:
         candidates = []
 
     # Fallback to all if category search returns little
     if len(candidates) < top_k:
-        all_memories = get_all_memories(db_path)
+        all_memories = get_all_memories(
+            db_path=db_path,
+            user_id=user_id,
+            thread_id=thread_id,
+        )
         if len(all_memories) > len(candidates):
             seen_ids = {m.id for m in candidates}
             for m in all_memories:

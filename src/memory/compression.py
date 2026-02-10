@@ -17,16 +17,23 @@ def maybe_compress(
     threshold: int = MEMORY_COMPRESSION_THRESHOLD,
     compress_count: int = 15,
     db_path: Optional[Path] = None,
+    user_id: Optional[int] = None,
+    thread_id: Optional[int] = None,
 ) -> bool:
     """
     If memory count > threshold, compress oldest memories into a summary.
     Uses a single atomic transaction so we never delete without storing the summary (no data loss).
     """
-    count = get_memory_count(db_path)
+    count = get_memory_count(db_path=db_path, user_id=user_id, thread_id=thread_id)
     if count < threshold:
         return False
 
-    oldest = get_oldest_memories(compress_count, db_path)
+    oldest = get_oldest_memories(
+        compress_count,
+        db_path=db_path,
+        user_id=user_id,
+        thread_id=thread_id,
+    )
     if not oldest:
         return False
 
@@ -41,4 +48,11 @@ def maybe_compress(
     except Exception:
         embedding = None
 
-    return replace_with_compressed(oldest, content, embedding, db_path)
+    return replace_with_compressed(
+        old_memories=oldest,
+        new_content=content,
+        new_embedding=embedding,
+        db_path=db_path,
+        user_id=user_id,
+        thread_id=thread_id,
+    )

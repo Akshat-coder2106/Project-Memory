@@ -16,6 +16,8 @@ DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "memories.db"
 class Memory:
     """A single long-term memory with embedding."""
     id: Optional[int]
+    user_id: Optional[int]
+    thread_id: Optional[int]
     content: str
     category: str
     embedding: Optional[list[float]]
@@ -24,6 +26,8 @@ class Memory:
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "user_id": self.user_id,
+            "thread_id": self.thread_id,
             "content": self.content,
             "category": self.category,
             "embedding": self.embedding,
@@ -40,20 +44,77 @@ def _get_connection(db_path: Path = None) -> sqlite3.Connection:
     return conn
 
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(r["name"] == column for r in rows)
+
+
 def init_db(db_path: Path = None) -> None:
-    """Create memories table if it doesn't exist."""
+    """Create/migrate users, messages, and memories tables."""
     conn = _get_connection(db_path)
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS memories (
+        CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            content TEXT NOT NULL,
-            category TEXT NOT NULL,
-            embedding_blob BLOB,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            thread_id INTEGER,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            thread_id INTEGER,
+            content TEXT NOT NULL,
+            category TEXT NOT NULL,
+            embedding_blob BLOB,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chat_threads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            is_temporary INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    """)
+    # Migration for older databases created before user_id existed.
+    if not _column_exists(conn, "memories", "user_id"):
+        conn.execute("ALTER TABLE memories ADD COLUMN user_id INTEGER")
+    if not _column_exists(conn, "memories", "thread_id"):
+        conn.execute("ALTER TABLE memories ADD COLUMN thread_id INTEGER")
+    if not _column_exists(conn, "messages", "thread_id"):
+        conn.execute("ALTER TABLE messages ADD COLUMN thread_id INTEGER")
+    if not _column_exists(conn, "chat_threads", "is_temporary"):
+        conn.execute("ALTER TABLE chat_threads ADD COLUMN is_temporary INTEGER NOT NULL DEFAULT 0")
+
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_user_thread_created ON messages(user_id, thread_id, created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_category ON memories(category)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_created_at ON memories(created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_user_id ON memories(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_thread_id ON memories(thread_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_user_category ON memories(user_id, category)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_user_thread_category ON memories(user_id, thread_id, category)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_threads_user_updated ON chat_threads(user_id, updated_at)")
     conn.commit()
     conn.close()
 
@@ -63,20 +124,24 @@ def add_memory(
     category: str,
     embedding: Optional[list[float]] = None,
     db_path: Path = None,
+    user_id: Optional[int] = None,
+    thread_id: Optional[int] = None,
 ) -> Memory:
     """Insert a memory and return it with id."""
     conn = _get_connection(db_path)
     now = datetime.utcnow().isoformat()
     emb_blob = json.dumps(embedding).encode() if embedding else None
     cursor = conn.execute(
-        "INSERT INTO memories (content, category, embedding_blob, created_at) VALUES (?, ?, ?, ?)",
-        (content, category, emb_blob, now),
+        "INSERT INTO memories (user_id, thread_id, content, category, embedding_blob, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, thread_id, content, category, emb_blob, now),
     )
     conn.commit()
     row_id = cursor.lastrowid
     conn.close()
     return Memory(
         id=row_id,
+        user_id=user_id,
+        thread_id=thread_id,
         content=content,
         category=category,
         embedding=embedding,
@@ -87,42 +152,109 @@ def add_memory(
 def get_memories_by_category(
     category: str,
     db_path: Path = None,
+    user_id: Optional[int] = None,
+    thread_id: Optional[int] = None,
 ) -> list[Memory]:
     """Fetch all memories in a category."""
     conn = _get_connection(db_path)
-    rows = conn.execute(
-        "SELECT id, content, category, embedding_blob, created_at FROM memories WHERE category = ? ORDER BY created_at ASC",
-        (category,),
-    ).fetchall()
+    if user_id is None and thread_id is None:
+        rows = conn.execute(
+            "SELECT id, user_id, thread_id, content, category, embedding_blob, created_at FROM memories WHERE category = ? ORDER BY created_at ASC",
+            (category,),
+        ).fetchall()
+    elif user_id is not None and thread_id is None:
+        rows = conn.execute(
+            "SELECT id, user_id, thread_id, content, category, embedding_blob, created_at FROM memories WHERE category = ? AND user_id = ? ORDER BY created_at ASC",
+            (category, user_id),
+        ).fetchall()
+    elif user_id is None and thread_id is not None:
+        rows = conn.execute(
+            "SELECT id, user_id, thread_id, content, category, embedding_blob, created_at FROM memories WHERE category = ? AND thread_id = ? ORDER BY created_at ASC",
+            (category, thread_id),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, user_id, thread_id, content, category, embedding_blob, created_at FROM memories WHERE category = ? AND user_id = ? AND thread_id = ? ORDER BY created_at ASC",
+            (category, user_id, thread_id),
+        ).fetchall()
     conn.close()
     return [_row_to_memory(r) for r in rows]
 
 
-def get_all_memories(db_path: Path = None) -> list[Memory]:
+def get_all_memories(
+    db_path: Path = None,
+    user_id: Optional[int] = None,
+    thread_id: Optional[int] = None,
+) -> list[Memory]:
     """Fetch all memories ordered by creation time."""
     conn = _get_connection(db_path)
-    rows = conn.execute(
-        "SELECT id, content, category, embedding_blob, created_at FROM memories ORDER BY created_at ASC"
-    ).fetchall()
+    if user_id is None and thread_id is None:
+        rows = conn.execute(
+            "SELECT id, user_id, thread_id, content, category, embedding_blob, created_at FROM memories ORDER BY created_at ASC"
+        ).fetchall()
+    elif user_id is not None and thread_id is None:
+        rows = conn.execute(
+            "SELECT id, user_id, thread_id, content, category, embedding_blob, created_at FROM memories WHERE user_id = ? ORDER BY created_at ASC",
+            (user_id,),
+        ).fetchall()
+    elif user_id is None and thread_id is not None:
+        rows = conn.execute(
+            "SELECT id, user_id, thread_id, content, category, embedding_blob, created_at FROM memories WHERE thread_id = ? ORDER BY created_at ASC",
+            (thread_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, user_id, thread_id, content, category, embedding_blob, created_at FROM memories WHERE user_id = ? AND thread_id = ? ORDER BY created_at ASC",
+            (user_id, thread_id),
+        ).fetchall()
     conn.close()
     return [_row_to_memory(r) for r in rows]
 
 
-def get_memory_count(db_path: Path = None) -> int:
+def get_memory_count(
+    db_path: Path = None,
+    user_id: Optional[int] = None,
+    thread_id: Optional[int] = None,
+) -> int:
     """Return total number of memories."""
     conn = _get_connection(db_path)
-    count = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+    if user_id is None and thread_id is None:
+        count = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+    elif user_id is not None and thread_id is None:
+        count = conn.execute("SELECT COUNT(*) FROM memories WHERE user_id = ?", (user_id,)).fetchone()[0]
+    elif user_id is None and thread_id is not None:
+        count = conn.execute("SELECT COUNT(*) FROM memories WHERE thread_id = ?", (thread_id,)).fetchone()[0]
+    else:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE user_id = ? AND thread_id = ?",
+            (user_id, thread_id),
+        ).fetchone()[0]
     conn.close()
     return count
 
 
-def delete_memories(ids: list[int], db_path: Path = None) -> None:
+def delete_memories(
+    ids: list[int],
+    db_path: Path = None,
+    user_id: Optional[int] = None,
+    thread_id: Optional[int] = None,
+) -> None:
     """Delete memories by id list."""
     if not ids:
         return
     conn = _get_connection(db_path)
     placeholders = ",".join("?" * len(ids))
-    conn.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
+    if user_id is None and thread_id is None:
+        conn.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
+    elif user_id is not None and thread_id is None:
+        conn.execute(f"DELETE FROM memories WHERE user_id = ? AND id IN ({placeholders})", [user_id] + ids)
+    elif user_id is None and thread_id is not None:
+        conn.execute(f"DELETE FROM memories WHERE thread_id = ? AND id IN ({placeholders})", [thread_id] + ids)
+    else:
+        conn.execute(
+            f"DELETE FROM memories WHERE user_id = ? AND thread_id = ? AND id IN ({placeholders})",
+            [user_id, thread_id] + ids,
+        )
     conn.commit()
     conn.close()
 
@@ -132,9 +264,11 @@ def has_similar_memory(
     category: str,
     threshold: float,
     db_path: Path = None,
+    user_id: Optional[int] = None,
+    thread_id: Optional[int] = None,
 ) -> bool:
     """Return True if a memory in this category exists with similarity >= threshold."""
-    candidates = get_memories_by_category(category, db_path)
+    candidates = get_memories_by_category(category, db_path=db_path, user_id=user_id, thread_id=thread_id)
     if not embedding:
         return False
     from memory.embeddings import cosine_similarity
@@ -144,13 +278,34 @@ def has_similar_memory(
     return False
 
 
-def get_oldest_memories(limit: int, db_path: Path = None) -> list[Memory]:
+def get_oldest_memories(
+    limit: int,
+    db_path: Path = None,
+    user_id: Optional[int] = None,
+    thread_id: Optional[int] = None,
+) -> list[Memory]:
     """Get oldest N memories for compression."""
     conn = _get_connection(db_path)
-    rows = conn.execute(
-        "SELECT id, content, category, embedding_blob, created_at FROM memories ORDER BY created_at ASC LIMIT ?",
-        (limit,),
-    ).fetchall()
+    if user_id is None and thread_id is None:
+        rows = conn.execute(
+            "SELECT id, user_id, thread_id, content, category, embedding_blob, created_at FROM memories ORDER BY created_at ASC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    elif user_id is not None and thread_id is None:
+        rows = conn.execute(
+            "SELECT id, user_id, thread_id, content, category, embedding_blob, created_at FROM memories WHERE user_id = ? ORDER BY created_at ASC LIMIT ?",
+            (user_id, limit),
+        ).fetchall()
+    elif user_id is None and thread_id is not None:
+        rows = conn.execute(
+            "SELECT id, user_id, thread_id, content, category, embedding_blob, created_at FROM memories WHERE thread_id = ? ORDER BY created_at ASC LIMIT ?",
+            (thread_id, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, user_id, thread_id, content, category, embedding_blob, created_at FROM memories WHERE user_id = ? AND thread_id = ? ORDER BY created_at ASC LIMIT ?",
+            (user_id, thread_id, limit),
+        ).fetchall()
     conn.close()
     return [_row_to_memory(r) for r in rows]
 
@@ -160,22 +315,42 @@ def replace_with_compressed(
     new_content: str,
     new_embedding: Optional[list[float]] = None,
     db_path: Path = None,
+    user_id: Optional[int] = None,
+    thread_id: Optional[int] = None,
 ) -> bool:
     """Atomically add one summary memory and remove the old ones. Prevents data loss if one step fails."""
     if not old_memories:
         return False
+    resolved_user_id = user_id if user_id is not None else old_memories[0].user_id
+    resolved_thread_id = thread_id if thread_id is not None else old_memories[0].thread_id
     conn = _get_connection(db_path)
     try:
         now = datetime.utcnow().isoformat()
         emb_blob = json.dumps(new_embedding).encode() if new_embedding else None
         conn.execute(
-            "INSERT INTO memories (content, category, embedding_blob, created_at) VALUES (?, ?, ?, ?)",
-            (new_content, "misc", emb_blob, now),
+            "INSERT INTO memories (user_id, thread_id, content, category, embedding_blob, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (resolved_user_id, resolved_thread_id, new_content, "misc", emb_blob, now),
         )
         ids = [m.id for m in old_memories if m.id is not None]
         if ids:
             placeholders = ",".join("?" * len(ids))
-            conn.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
+            if resolved_user_id is None and resolved_thread_id is None:
+                conn.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
+            elif resolved_user_id is not None and resolved_thread_id is None:
+                conn.execute(
+                    f"DELETE FROM memories WHERE user_id = ? AND id IN ({placeholders})",
+                    [resolved_user_id] + ids,
+                )
+            elif resolved_user_id is None and resolved_thread_id is not None:
+                conn.execute(
+                    f"DELETE FROM memories WHERE thread_id = ? AND id IN ({placeholders})",
+                    [resolved_thread_id] + ids,
+                )
+            else:
+                conn.execute(
+                    f"DELETE FROM memories WHERE user_id = ? AND thread_id = ? AND id IN ({placeholders})",
+                    [resolved_user_id, resolved_thread_id] + ids,
+                )
         conn.commit()
         return True
     except Exception:
@@ -188,8 +363,12 @@ def replace_with_compressed(
 def _row_to_memory(row: sqlite3.Row) -> Memory:
     emb_blob = row["embedding_blob"]
     embedding = json.loads(emb_blob.decode()) if emb_blob else None
+    user_id = row["user_id"] if "user_id" in row.keys() else None
+    thread_id = row["thread_id"] if "thread_id" in row.keys() else None
     return Memory(
         id=row["id"],
+        user_id=user_id,
+        thread_id=thread_id,
         content=row["content"],
         category=row["category"],
         embedding=embedding,

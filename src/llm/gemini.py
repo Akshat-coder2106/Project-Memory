@@ -1,9 +1,12 @@
-"""Gemini API client with graceful fallback when unavailable."""
+"""Gemini API client with OpenRouter fallback when Gemini is unavailable."""
 
 import os
 import re
 import sys
 import time
+import json
+import urllib.request
+import urllib.error
 from pathlib import Path
 from typing import Optional
 
@@ -72,6 +75,22 @@ def _current_model() -> str:
     return (os.environ.get("GEMINI_MODEL") or "gemini-2.0-flash").strip()
 
 
+def _openrouter_key() -> str:
+    """OpenRouter key from dedicated env or GEMINI_API_KEY if user pasted sk-or key there."""
+    key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+    if key:
+        return key
+    gemini_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
+    if gemini_key.startswith("sk-or-"):
+        return gemini_key
+    return ""
+
+
+def _openrouter_model() -> str:
+    """OpenRouter model name."""
+    return (os.environ.get("OPENROUTER_MODEL") or "openai/gpt-4o-mini").strip()
+
+
 def _retry_after_seconds(e: Exception) -> float:
     """Parse 'Please retry in X.XXs' from error message. Returns 0 if not found."""
     m = re.search(r"retry in (\d+(?:\.\d+)?)\s*s", str(e), re.I)
@@ -103,7 +122,10 @@ def _record_gemini_call():
 
 
 def is_available() -> bool:
-    """Check if Gemini API is configured and working."""
+    """Check if Gemini or OpenRouter API is configured."""
+    _load_env()
+    if _openrouter_key():
+        return True
     return _get_client() is not None
 
 
@@ -234,70 +256,111 @@ def generate(
     Remembers which model worked so the next message skips models with no quota.
     """
     global _last_working_model, _models_with_no_quota
+    _load_env()
     client = _get_client()
-    if not client:
-        return None
     full = system_instruction + "\n\n" + prompt if system_instruction else prompt
-    last_error = None
-    models = _models_to_try() if _use_new_sdk else [_current_model()]
-    for model in models:
-        for attempt in range(_MAX_429_RETRIES + 1):
-            _wait_for_quota()
-            _record_gemini_call()
-            try:
-                out = _generate_once(client, full, model=model if _use_new_sdk else None)
-                if out is not None:
-                    _last_working_model = model if _use_new_sdk else _current_model()
-                    return out
-            except Exception as e:
-                last_error = e
-                if not _is_429(e):
-                    break
-                if _is_limit_zero(e) and _use_new_sdk and attempt == 0:
-                    if model not in _models_with_no_quota:
-                        _models_with_no_quota.add(model)
-                        print(f"[Gemini] No quota for {model}; using next model for this session.", file=sys.stderr)
-                    break
-                if attempt < _MAX_429_RETRIES:
-                    wait = _retry_after_seconds(e)
-                    print(f"[Gemini] Rate limit — waiting {wait:.0f}s...", file=sys.stderr)
-                    time.sleep(wait)
-                else:
-                    break
-        if last_error and not (_is_429(last_error) and _is_limit_zero(last_error)):
-            break
-    # On 429, try next API key if multiple keys are configured (e.g. GEMINI_API_KEY=key1,key2)
-    if last_error and _is_429(last_error) and _switch_to_next_key():
-        print("[Gemini] Quota exceeded on this key — trying next key from .env...", file=sys.stderr)
-        client = _get_client()
-        if client:
-            _wait_for_quota()
-            _record_gemini_call()
-            try:
-                model = (_last_working_model or _current_model()) if _use_new_sdk else None
-                out = _generate_once(client, full, model=model)
-                if out is not None:
-                    return out
-            except Exception:
-                pass
-    _log_error("Generate failed.", last_error)
-    if last_error and _is_429(last_error):
-        global _quota_saving_mode
-        _quota_saving_mode = True
-        if _is_limit_zero(last_error):
-            print(
-                "[Gemini] Quota shows 'limit: 0' — free tier may not be available in your region.\n"
-                "  • Check usage: https://aistudio.google.com/usage\n"
-                "  • Try another model: add GEMINI_MODEL=gemini-2.5-flash or GEMINI_MODEL=gemini-2.5-flash-lite to .env and restart.",
-                file=sys.stderr,
-            )
-        else:
-            print(
-                "[Gemini] Quota exceeded. Add another key in .env: GEMINI_API_KEY=key1,key2 (each key gets 20/day)",
-                file=sys.stderr,
-            )
-            print("  Or get a new key: https://aistudio.google.com/apikey", file=sys.stderr)
-        print("[Gemini] Using quota-saver mode for rest of session (1 call per message).", file=sys.stderr)
+    if client:
+        last_error = None
+        models = _models_to_try() if _use_new_sdk else [_current_model()]
+        for model in models:
+            for attempt in range(_MAX_429_RETRIES + 1):
+                _wait_for_quota()
+                _record_gemini_call()
+                try:
+                    out = _generate_once(client, full, model=model if _use_new_sdk else None)
+                    if out is not None:
+                        _last_working_model = model if _use_new_sdk else _current_model()
+                        return out
+                except Exception as e:
+                    last_error = e
+                    if not _is_429(e):
+                        break
+                    if _is_limit_zero(e) and _use_new_sdk and attempt == 0:
+                        if model not in _models_with_no_quota:
+                            _models_with_no_quota.add(model)
+                            print(f"[Gemini] No quota for {model}; using next model for this session.", file=sys.stderr)
+                        break
+                    if attempt < _MAX_429_RETRIES:
+                        wait = _retry_after_seconds(e)
+                        print(f"[Gemini] Rate limit — waiting {wait:.0f}s...", file=sys.stderr)
+                        time.sleep(wait)
+                    else:
+                        break
+            if last_error and not (_is_429(last_error) and _is_limit_zero(last_error)):
+                break
+        # On 429, try next API key if multiple keys are configured (e.g. GEMINI_API_KEY=key1,key2)
+        if last_error and _is_429(last_error) and _switch_to_next_key():
+            print("[Gemini] Quota exceeded on this key — trying next key from .env...", file=sys.stderr)
+            client = _get_client()
+            if client:
+                _wait_for_quota()
+                _record_gemini_call()
+                try:
+                    model = (_last_working_model or _current_model()) if _use_new_sdk else None
+                    out = _generate_once(client, full, model=model)
+                    if out is not None:
+                        return out
+                except Exception:
+                    pass
+        _log_error("Generate failed.", last_error)
+        if last_error and _is_429(last_error):
+            global _quota_saving_mode
+            _quota_saving_mode = True
+            if _is_limit_zero(last_error):
+                print(
+                    "[Gemini] Quota shows 'limit: 0' — free tier may not be available in your region.\n"
+                    "  • Check usage: https://aistudio.google.com/usage\n"
+                    "  • Try another model: add GEMINI_MODEL=gemini-2.5-flash or GEMINI_MODEL=gemini-2.5-flash-lite to .env and restart.",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    "[Gemini] Quota exceeded. Add another key in .env: GEMINI_API_KEY=key1,key2 (each key gets 20/day)",
+                    file=sys.stderr,
+                )
+                print("  Or get a new key: https://aistudio.google.com/apikey", file=sys.stderr)
+            print("[Gemini] Using quota-saver mode for rest of session (1 call per message).", file=sys.stderr)
+    return _generate_openrouter(full)
+
+
+def _generate_openrouter(full_prompt: str) -> Optional[str]:
+    """Generate via OpenRouter (OpenAI-compatible API) when GEMINI is unavailable."""
+    key = _openrouter_key()
+    if not key:
+        return None
+    payload = {
+        "model": _openrouter_model(),
+        "messages": [{"role": "user", "content": full_prompt}],
+        "temperature": 0.7,
+    }
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:5000",
+            "X-Title": "Project-Memory",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as res:
+            raw = json.loads(res.read().decode("utf-8"))
+            choices = raw.get("choices") or []
+            if not choices:
+                return None
+            message = choices[0].get("message") or {}
+            content = (message.get("content") or "").strip()
+            return content or None
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="ignore")
+        except Exception:
+            body = str(e)
+        _log_error(f"OpenRouter HTTP {e.code}", Exception(body))
+    except Exception as e:
+        _log_error("OpenRouter request failed.", e)
     return None
 
 

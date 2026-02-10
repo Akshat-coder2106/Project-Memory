@@ -4,7 +4,9 @@ Main entry point - conversational AI with hierarchical memory.
 Run from project root: python -m src.main
 """
 
+import re
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Load .env early so GEMINI_API_KEY is available
@@ -32,13 +34,17 @@ def _get_fallback_message() -> str:
     """Return helpful message when Gemini is unavailable."""
     import os
     from pathlib import Path
-    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    key = (
+        os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("GOOGLE_API_KEY")
+        or os.environ.get("OPENROUTER_API_KEY")
+    )
     env_path = Path(__file__).resolve().parent.parent / ".env"
     if not key:
         return (
             "I can't connect to the AI right now. To enable AI responses:\n"
-            f"  1. Create {env_path} with: GEMINI_API_KEY=your_key\n"
-            "  2. Get a free key at https://aistudio.google.com/apikey\n"
+            f"  1. Create {env_path} with: GEMINI_API_KEY=your_key OR OPENROUTER_API_KEY=your_key\n"
+            "  2. Get a key at https://aistudio.google.com/apikey or https://openrouter.ai/keys\n"
             "  3. Restart the app."
         )
     return "The AI service is temporarily unavailable. I've noted your message—please try again in a moment."
@@ -58,6 +64,127 @@ SYSTEM_INSTRUCTION = """You are a helpful conversational assistant with long-ter
 Use the provided "Relevant memories" to personalize your responses. Be concise and natural.
 If memories conflict with what the user just said, prioritize the most recent conversation."""
 
+_DATETIME_QUERY_RE = re.compile(
+    r"(what\s+time\s+is\s+it|what'?s\s+the\s+time|current\s+time|time\s+now|time\s+right\s+now|"
+    r"today'?s\s+date|date\s+today|current\s+date|"
+    r"what\s+day\s+is\s+it|which\s+day\s+is\s+it|"
+    r"date\s+and\s+time|current\s+date\s+and\s+time|"
+    r"tomorrow\s+date|tommorow\s+date|yesterday\s+date|"
+    r"\d+\s*days?\s*(after|before|from|ago|later)|"
+    r"(in|after|before)\s+\d+\s*days?)",
+    re.IGNORECASE,
+)
+
+
+def _is_datetime_request(text: str) -> bool:
+    """Heuristic for direct current date/time questions."""
+    return _datetime_mode(text) != "none"
+
+
+def _datetime_mode(text: str) -> str:
+    """Classify query intent: time/date/both/none."""
+    t = (text or "").strip().lower()
+    if not t:
+        return "none"
+    if _DATETIME_QUERY_RE.search(t):
+        if "date" in t and "time" in t:
+            return "both"
+        if "date" in t or "day" in t or "today" in t:
+            return "date"
+        return "time"
+    has_time = ("time" in t) or ("clock" in t) or ("hour" in t)
+    has_date = (
+        ("date" in t)
+        or ("today" in t)
+        or ("tomorrow" in t)
+        or ("tommorow" in t)
+        or ("yesterday" in t)
+        or ("month" in t)
+        or ("year" in t)
+        or ("what day is it" in t)
+        or ("which day is it" in t)
+        or bool(re.search(r"\b(in|after|before)\s+\d+\s*days?\b", t))
+        or bool(re.search(r"\b\d+\s*days?\s*(after|before|from|ago|later)\b", t))
+    )
+    if has_time and has_date:
+        return "both"
+    if has_time:
+        return "time"
+    if has_date:
+        return "date"
+    return "none"
+
+
+def _relative_day_offset(text: str) -> int:
+    """Parse relative day intent from text (e.g., tomorrow/yesterday)."""
+    t = (text or "").strip().lower()
+    if not t:
+        return 0
+    if re.search(r"\b(day\s+after\s+tomorrow|after\s+tomorrow)\b", t):
+        return 2
+    if re.search(r"\b(day\s+before\s+yesterday|before\s+yesterday)\b", t):
+        return -2
+    if re.search(r"\b(tomorrow|tommorow|tmrw|tmr)\b", t):
+        return 1
+    if re.search(r"\byesterday\b", t):
+        return -1
+    m = re.search(r"\bin\s+(\d+)\s+days?\b", t)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"\b(\d+)\s+days?\s+(after|from|later)\b", t)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"\bafter\s+(\d+)\s+days?\b", t)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"\b(\d+)\s+days?\s+(before|ago|prior)\b", t)
+    if m:
+        return -int(m.group(1))
+    m = re.search(r"\bbefore\s+(\d+)\s+days?\b", t)
+    if m:
+        return -int(m.group(1))
+    return 0
+
+
+def _days_phrase(n: int) -> str:
+    return "1 day" if n == 1 else f"{n} days"
+
+
+def _current_datetime_reply(user_message: str) -> str:
+    """Return concise current date/time based on what user asked."""
+    now = datetime.now().astimezone()
+    mode = _datetime_mode(user_message)
+    offset = _relative_day_offset(user_message)
+    target = now + timedelta(days=offset)
+    time_part = target.strftime("%I:%M %p").lstrip("0")
+    tz_part = target.strftime("%Z")
+    date_part = target.strftime("%A, %B %d, %Y")
+    if mode == "time":
+        if offset == 0:
+            return f"It is {time_part} {tz_part}."
+        if offset > 0:
+            return f"In {_days_phrase(offset)}, it will be around {time_part} {tz_part}."
+        return f"{_days_phrase(abs(offset))} ago, it was around {time_part} {tz_part}."
+    if mode == "date":
+        if offset == 0:
+            return f"Today is {date_part}."
+        if offset == 1:
+            return f"Tomorrow is {date_part}."
+        if offset == 2:
+            return f"Day after tomorrow is {date_part}."
+        if offset == -1:
+            return f"Yesterday was {date_part}."
+        if offset == -2:
+            return f"Day before yesterday was {date_part}."
+        if offset > 0:
+            return f"In {_days_phrase(offset)}, it will be {date_part}."
+        return f"{_days_phrase(abs(offset))} ago, it was {date_part}."
+    if offset == 0:
+        return f"It is {time_part} {tz_part} on {date_part}."
+    if offset > 0:
+        return f"In {_days_phrase(offset)}, it will be {time_part} {tz_part} on {date_part}."
+    return f"{_days_phrase(abs(offset))} ago, it was {time_part} {tz_part} on {date_part}."
+
 
 def build_context(short_term: ShortTermBuffer, memories_text: str) -> str:
     """Build the context string for the LLM."""
@@ -70,6 +197,8 @@ def build_context(short_term: ShortTermBuffer, memories_text: str) -> str:
 
 def get_response(user_message: str, short_term: ShortTermBuffer) -> str:
     """Generate response using Gemini or fallback."""
+    if _is_datetime_request(user_message):
+        return _current_datetime_reply(user_message)
     mems = retrieve(user_message, top_k=TOP_K_MEMORIES)
     memories_text = "\n".join(f"- [{m.category}] {m.content}" for m in mems) if mems else ""
     context = build_context(short_term, memories_text)
@@ -170,7 +299,7 @@ def main():
         else:
             print("(Gemini API connected - using AI responses and smart extraction)")
     else:
-        print("(Gemini API not found - using local fallback. Set GEMINI_API_KEY in .env for full features)")
+        print("(AI key not found - using local fallback. Set GEMINI_API_KEY or OPENROUTER_API_KEY in .env for full features)")
 
     while True:
         user_input = input("You: ").strip()
@@ -184,6 +313,13 @@ def main():
                 continue
 
         buffer.add("user", user_input)
+
+        # Deterministic answer for current date/time queries (skip extraction/compression/model).
+        if _is_datetime_request(user_input):
+            response = _current_datetime_reply(user_input)
+            buffer.add("assistant", response)
+            print(f"\nAssistant: {response}\n")
+            continue
 
         # Extract and store facts (use local extraction when saving quota — free tier is 20/day)
         stored = process_and_store_facts(user_input, use_gemini=has_gemini and not is_quota_saving())
