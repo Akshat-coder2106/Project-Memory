@@ -11,6 +11,8 @@ const state = {
   threads: [],
   activeThreadId: null,
   sidebarOpen: window.innerWidth > MOBILE_BREAKPOINT,
+  messagesRequestSeq: 0,
+  suspendAutoScroll: false,
 };
 
 const AUTH_VIEW_IDS = {
@@ -27,15 +29,6 @@ const AUTH_MESSAGE_IDS = {
 
 function isMobileViewport() {
   return window.innerWidth <= MOBILE_BREAKPOINT;
-}
-
-function getCurrentThread() {
-  return state.threads.find((t) => t.id === state.activeThreadId) || null;
-}
-
-function isTemporaryThread() {
-  const thread = getCurrentThread();
-  return !!(thread && thread.is_temporary);
 }
 
 function getUserAvatarLetter() {
@@ -296,36 +289,15 @@ function setUserUI(user) {
 }
 
 function updateHeaderThreadUI() {
-  const thread = getCurrentThread();
-  const threadPill = document.getElementById("thread-pill");
-  const modePill = document.getElementById("mode-pill");
   const welcomeSub = document.getElementById("welcome-sub");
   const input = document.getElementById("chat-input");
 
-  if (threadPill) {
-    threadPill.textContent = thread ? thread.title : "New chat";
-  }
-
-  if (modePill) {
-    if (thread && thread.is_temporary) {
-      modePill.textContent = "Temporary";
-      modePill.classList.add("temporary");
-    } else {
-      modePill.textContent = "Stored";
-      modePill.classList.remove("temporary");
-    }
-  }
-
   if (welcomeSub) {
-    welcomeSub.textContent = thread && thread.is_temporary
-      ? "Temporary thread active — nothing from this thread is saved to storage."
-      : "Start a conversation — I'll remember what you share.";
+    welcomeSub.textContent = "Start a conversation — I'll remember what you share.";
   }
 
   if (input) {
-    input.placeholder = thread && thread.is_temporary
-      ? "Temporary chat (not stored)…"
-      : "Type a message…";
+    input.placeholder = "Type a message…";
   }
 }
 
@@ -337,22 +309,47 @@ function updateScrollBottomButton() {
   btn.classList.toggle("is-hidden", remaining < 160);
 }
 
-function renderMessages(messages) {
+function renderThreadLoadingState() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+  state.suspendAutoScroll = true;
+  container.classList.add("thread-switching");
+  container.innerHTML = `
+    <div class="thread-loading" aria-live="polite" aria-label="Loading messages">
+      <div class="thread-loading-line w-72"></div>
+      <div class="thread-loading-line w-56"></div>
+      <div class="thread-loading-line w-64"></div>
+    </div>
+  `;
+  updateScrollBottomButton();
+}
+
+function renderMessages(messages, options = {}) {
+  const { animate = false, scroll = "instant" } = options;
   const container = document.getElementById("chat-messages");
   const welcome = document.getElementById("welcome");
+  if (!container) return;
+  const suspendDuringRender = !animate;
+  if (suspendDuringRender) state.suspendAutoScroll = true;
+  container.classList.remove("thread-switching");
   if (messages && messages.length > 0) {
     if (welcome) welcome.remove();
     container.innerHTML = "";
     messages.forEach((m, index) => {
       const node = createMessageElement(m.role, m.content, m.created_at);
-      node.style.animationDelay = `${index * 0.03}s`;
+      if (animate) {
+        node.style.animationDelay = `${index * 0.03}s`;
+      } else {
+        node.classList.add("static");
+      }
       container.appendChild(node);
     });
-    smoothScrollToBottom(container, 300);
+    if (scroll === "smooth") {
+      smoothScrollToBottom(container, 220);
+    } else if (scroll === "instant") {
+      container.scrollTop = container.scrollHeight;
+    }
   } else if (!welcome) {
-    const welcomeText = isTemporaryThread()
-      ? "Temporary thread active — nothing from this thread is saved to storage."
-      : "Start a conversation — I'll remember what you share.";
     container.innerHTML = `
       <div class="welcome" id="welcome">
         <div class="welcome-badge">
@@ -363,12 +360,19 @@ function renderMessages(messages) {
           </svg>
         </div>
         <h1 class="welcome-title">Welcome to the chat box</h1>
-        <p class="welcome-sub" id="welcome-sub">${escapeHtml(welcomeText)}</p>
+        <p class="welcome-sub" id="welcome-sub">Start a conversation — I'll remember what you share.</p>
       </div>
     `;
   }
   updateHeaderThreadUI();
-  updateScrollBottomButton();
+  if (suspendDuringRender) {
+    requestAnimationFrame(() => {
+      state.suspendAutoScroll = false;
+      updateScrollBottomButton();
+    });
+  } else {
+    updateScrollBottomButton();
+  }
 }
 
 function sortThreadsInPlace() {
@@ -405,22 +409,25 @@ function renderThreadList() {
       const title = escapeHtml(thread.title || "New chat");
       const time = formatThreadTime(thread.last_message_at || thread.updated_at);
       const count = Number(thread.message_count || 0);
-      const previewSource = thread.last_message || (thread.is_temporary ? "Temporary thread" : "No messages yet");
+      const previewSource = thread.last_message || "No messages yet";
       const preview = escapeHtml(truncateText(previewSource, 42));
-      const pill = thread.is_temporary ? `<span class="thread-type-pill">Temp</span>` : "";
       const meta = [time, count > 0 ? `${count} msg${count === 1 ? "" : "s"}` : "empty"]
         .filter(Boolean)
         .join(" · ");
       return `
         <div class="thread-item${active ? " active" : ""}">
           <button class="thread-main" type="button" data-thread-id="${thread.id}" aria-label="Open ${title}">
-            <div class="thread-title-row">
-              <span class="thread-title">${title}</span>
-              ${pill}
-            </div>
+            <div class="thread-title-row"><span class="thread-title">${title}</span></div>
             <div class="thread-meta">${escapeHtml(meta)}${preview ? ` · ${preview}` : ""}</div>
           </button>
-          <button class="thread-delete-btn" type="button" data-thread-id="${thread.id}" aria-label="Delete ${title}">×</button>
+          <div class="thread-actions">
+            <button class="thread-more-btn" type="button" data-thread-id="${thread.id}" aria-label="Open actions for ${title}">...</button>
+            <div class="thread-menu" role="menu" aria-label="Thread actions">
+              <button class="thread-menu-item thread-menu-delete" type="button" data-thread-id="${thread.id}" role="menuitem">
+                Delete chat
+              </button>
+            </div>
+          </div>
         </div>
       `;
     })
@@ -430,14 +437,14 @@ function renderThreadList() {
 async function loadThreads(options = {}) {
   const { preferThreadId = null, preserveSelection = true } = options;
   const data = await api("/api/threads");
-  state.threads = data.threads || [];
+  state.threads = (data.threads || []).filter((t) => !t.is_temporary);
 
   if (!state.threads.length) {
     const created = await api("/api/threads", {
       method: "POST",
       body: JSON.stringify({ temporary: false }),
     });
-    state.threads = created.thread ? [created.thread] : [];
+    state.threads = created.thread ? [created.thread].filter((t) => !t.is_temporary) : [];
   }
 
   let nextId = null;
@@ -457,12 +464,13 @@ async function loadThreads(options = {}) {
   await loadMessages();
 }
 
-async function createThread(temporary = false) {
+async function createThread() {
   const data = await api("/api/threads", {
     method: "POST",
-    body: JSON.stringify({ temporary }),
+    body: JSON.stringify({ temporary: false }),
   });
   if (!data.thread) return;
+  if (data.thread.is_temporary) return;
   upsertThread(data.thread);
   state.activeThreadId = data.thread.id;
   renderThreadList();
@@ -481,6 +489,7 @@ async function selectThread(threadId) {
   state.activeThreadId = id;
   renderThreadList();
   updateHeaderThreadUI();
+  renderThreadLoadingState();
   await loadMessages();
   if (isMobileViewport()) setSidebarOpen(false);
 }
@@ -488,15 +497,12 @@ async function selectThread(threadId) {
 async function deleteThread(threadId) {
   const id = Number(threadId);
   if (!id) return;
-  const thread = state.threads.find((t) => t.id === id);
-  const label = thread ? thread.title : "this chat";
-  if (!window.confirm(`Delete ${label}? This will remove its stored messages.`)) {
-    return;
-  }
-
   const data = await api(`/api/threads/${id}`, { method: "DELETE" });
-  state.threads = data.threads || [];
+  state.threads = (data.threads || []).filter((t) => !t.is_temporary);
   state.activeThreadId = data.next_thread_id || (state.threads[0] ? state.threads[0].id : null);
+  if (state.activeThreadId && !state.threads.some((t) => t.id === state.activeThreadId)) {
+    state.activeThreadId = state.threads[0] ? state.threads[0].id : null;
+  }
   renderThreadList();
   updateHeaderThreadUI();
   await loadMessages();
@@ -508,12 +514,23 @@ async function loadMessages() {
     renderMessages([]);
     return;
   }
+  const threadId = Number(state.activeThreadId);
+  const requestSeq = ++state.messagesRequestSeq;
   try {
-    const data = await api(`/api/messages?thread_id=${encodeURIComponent(state.activeThreadId)}`);
+    const data = await api(`/api/messages?thread_id=${encodeURIComponent(threadId)}`);
+    if (requestSeq !== state.messagesRequestSeq || threadId !== Number(state.activeThreadId)) {
+      return;
+    }
     if (data.thread) upsertThread(data.thread);
     renderThreadList();
-    renderMessages(data.messages || []);
+    renderMessages(data.messages || [], {
+      animate: false,
+      scroll: "instant",
+    });
   } catch (e) {
+    if (requestSeq !== state.messagesRequestSeq || threadId !== Number(state.activeThreadId)) {
+      return;
+    }
     if (e.status === 401) {
       state.user = null;
       state.threads = [];
@@ -526,6 +543,7 @@ async function loadMessages() {
       });
       return;
     }
+    renderMessages([], { animate: false, scroll: "instant" });
     showNotification("Unable to load messages", "error");
   }
 }
@@ -545,8 +563,10 @@ async function sendMessage(text) {
   const btn = document.getElementById("send-btn");
   const container = document.getElementById("chat-messages");
   const welcome = document.getElementById("welcome");
+  const threadIdAtSend = Number(state.activeThreadId);
 
   input.value = "";
+  autoResizeComposer(input);
   input.disabled = true;
   btn.disabled = true;
 
@@ -565,9 +585,22 @@ async function sendMessage(text) {
       method: "POST",
       body: JSON.stringify({
         message: text,
-        thread_id: state.activeThreadId,
+        thread_id: threadIdAtSend,
       }),
     });
+
+    if (data.thread) {
+      upsertThread(data.thread);
+    } else {
+      upsertThread({
+        id: threadIdAtSend,
+        updated_at: new Date().toISOString(),
+      });
+    }
+    renderThreadList();
+    if (threadIdAtSend !== Number(state.activeThreadId)) {
+      return;
+    }
 
     loadingMessage.remove();
 
@@ -577,18 +610,11 @@ async function sendMessage(text) {
     const content = assistantMessage.querySelector(".message-content");
     animateAssistantText(content, replyText, () => smoothScrollToBottom(container, 160));
     smoothScrollToBottom(container, 280);
-
-    if (data.thread) {
-      upsertThread(data.thread);
-    } else {
-      upsertThread({
-        id: state.activeThreadId,
-        updated_at: new Date().toISOString(),
-      });
-    }
-    renderThreadList();
     updateHeaderThreadUI();
   } catch (e) {
+    if (threadIdAtSend !== Number(state.activeThreadId)) {
+      return;
+    }
     loadingMessage.remove();
     if (e.status === 401) {
       state.user = null;
@@ -613,6 +639,7 @@ async function sendMessage(text) {
     showNotification("Message failed", "error");
   } finally {
     input.disabled = false;
+    autoResizeComposer(input);
     btn.disabled = input.value.trim().length === 0;
     input.focus();
     updateScrollBottomButton();
@@ -620,6 +647,7 @@ async function sendMessage(text) {
 }
 
 function handleInput(e) {
+  autoResizeComposer(e.target);
   const btn = document.getElementById("send-btn");
   const hasText = e.target.value.trim().length > 0;
   btn.disabled = !hasText;
@@ -634,11 +662,18 @@ function handleSubmit(e) {
 }
 
 function handleKeyDown(e) {
-  if (e.key === "Enter" && !e.shiftKey) {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     const text = e.target.value.trim();
     if (text && !e.target.disabled) sendMessage(text);
   }
+}
+
+function autoResizeComposer(inputEl) {
+  if (!inputEl) return;
+  inputEl.style.height = "auto";
+  const nextHeight = Math.min(inputEl.scrollHeight, 128);
+  inputEl.style.height = `${Math.max(nextHeight, 22)}px`;
 }
 
 function addTypingIndicatorStyles() {
@@ -706,6 +741,7 @@ function enhanceScrollBehavior() {
 
   const observer = new MutationObserver(() => {
     updateScrollBottomButton();
+    if (state.suspendAutoScroll) return;
     if (!isUserScrolling) {
       const isNearBottom =
         container.scrollHeight - container.scrollTop - container.clientHeight < 100;
@@ -828,17 +864,23 @@ async function bootstrapAuthState() {
 function initThreadInteractions() {
   const threadList = document.getElementById("thread-list");
   const newChatBtn = document.getElementById("new-chat-btn");
-  const newTempBtn = document.getElementById("new-temp-chat-btn");
   const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
   const sidebarCollapseBtn = document.getElementById("sidebar-collapse-btn");
   const sidebarOverlay = document.getElementById("sidebar-overlay");
+  const closeThreadMenus = (exceptItem = null) => {
+    document.querySelectorAll(".thread-item.menu-open").forEach((item) => {
+      if (item !== exceptItem) item.classList.remove("menu-open");
+    });
+  };
 
   if (threadList) {
     threadList.addEventListener("click", async (e) => {
-      const delBtn = e.target.closest(".thread-delete-btn");
-      if (delBtn) {
+      const deleteMenuBtn = e.target.closest(".thread-menu-delete");
+      if (deleteMenuBtn) {
         e.preventDefault();
-        const threadId = Number(delBtn.dataset.threadId);
+        e.stopPropagation();
+        const threadId = Number(deleteMenuBtn.dataset.threadId);
+        closeThreadMenus();
         try {
           await deleteThread(threadId);
         } catch (err) {
@@ -847,6 +889,19 @@ function initThreadInteractions() {
         return;
       }
 
+      const moreBtn = e.target.closest(".thread-more-btn");
+      if (moreBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const threadItem = moreBtn.closest(".thread-item");
+        if (!threadItem) return;
+        const willOpen = !threadItem.classList.contains("menu-open");
+        closeThreadMenus(threadItem);
+        threadItem.classList.toggle("menu-open", willOpen);
+        return;
+      }
+
+      closeThreadMenus();
       const openBtn = e.target.closest(".thread-main");
       if (!openBtn) return;
       const threadId = Number(openBtn.dataset.threadId);
@@ -858,20 +913,23 @@ function initThreadInteractions() {
     });
   }
 
-  newChatBtn.addEventListener("click", async () => {
-    try {
-      await createThread(false);
-    } catch (err) {
-      showNotification(err.message || "Could not create chat", "error");
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".thread-actions")) {
+      closeThreadMenus();
     }
   });
 
-  newTempBtn.addEventListener("click", async () => {
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeThreadMenus();
+    }
+  });
+
+  newChatBtn.addEventListener("click", async () => {
     try {
-      await createThread(true);
-      showNotification("Temporary chat created (no storage)", "info");
+      await createThread();
     } catch (err) {
-      showNotification(err.message || "Could not create temporary chat", "error");
+      showNotification(err.message || "Could not create chat", "error");
     }
   });
 
@@ -914,6 +972,7 @@ function init() {
   form.addEventListener("submit", handleSubmit);
   input.addEventListener("input", handleInput);
   input.addEventListener("keydown", handleKeyDown);
+  autoResizeComposer(input);
   sendBtn.disabled = true;
   logoutBtn.addEventListener("click", handleLogout);
 

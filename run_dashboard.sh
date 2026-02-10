@@ -3,13 +3,21 @@
 
 cd "$(dirname "$0")"
 
+if [[ -x ".venv/bin/python" ]]; then
+  PYTHON_BIN=".venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="python3"
+else
+  PYTHON_BIN="python"
+fi
+
 echo "Starting backend API on http://127.0.0.1:5000"
-python -m src.api &
+"$PYTHON_BIN" -m src.api &
 API_PID=$!
 
 sleep 2
 echo "Serving frontend on http://127.0.0.1:8080"
-cd dashboard && python -m http.server 8080 &
+cd dashboard && "$PYTHON_BIN" -m http.server 8080 &
 SERVER_PID=$!
 
 echo ""

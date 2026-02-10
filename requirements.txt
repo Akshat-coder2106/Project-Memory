@@ -5,9 +5,8 @@
 sentence-transformers>=2.2.0
 numpy>=1.24.0
 
-# Day 4: Gemini API (new SDK preferred; old one is deprecated)
-google-genai>=1.0.0
-google-generativeai>=0.3.0
+# Day 4: OpenRouter API
+# Uses Python stdlib urllib (no extra SDK required)
 
 # Optional: env variables
 python-dotenv>=1.0.0

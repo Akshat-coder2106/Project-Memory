@@ -29,7 +29,7 @@ See `SAMPLE_DATA.md` for 10 sample memories across categories, mixed timestamps,
 
 - Hover: relevance highlights
 - Selection: provenance and confidence
-- Graceful error UI when Gemini unavailable: local-fallback indicator + last-success timestamp
+- Graceful error UI when AI provider is unavailable: local-fallback indicator + last-success timestamp
 
 ## Accessibility
 

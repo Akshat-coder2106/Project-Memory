@@ -1,1 +1,1 @@
-"""LLM module: Gemini API with fallbacks."""
+"""LLM module: OpenRouter-based client."""

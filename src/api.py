@@ -30,11 +30,11 @@ from memory.long_term import (
     get_memory_count,
     DEFAULT_DB_PATH,
 )
-from memory.extractor import extract_local, extract_with_gemini
+from memory.extractor import extract_local, extract_with_openrouter
 from memory.embeddings import encode
 from memory.retrieval import retrieve
 from memory.compression import maybe_compress
-from llm.gemini import generate, is_available
+from llm.openrouter import generate, is_available
 from config import (
     MAX_SHORT_TERM_MESSAGES,
     TOP_K_MEMORIES,
@@ -77,13 +77,9 @@ _DATETIME_QUERY_RE = re.compile(
 
 
 def _get_fallback_message():
-    has_key = (
-        os.environ.get("GEMINI_API_KEY")
-        or os.environ.get("GOOGLE_API_KEY")
-        or os.environ.get("OPENROUTER_API_KEY")
-    )
+    has_key = os.environ.get("OPENROUTER_API_KEY")
     return (
-        "I can't connect to the AI right now. Set GEMINI_API_KEY or OPENROUTER_API_KEY in .env and restart."
+        "I can't connect to the AI right now. Set OPENROUTER_API_KEY in .env and restart."
         if not has_key
         else "The AI service is temporarily unavailable. Please try again in a moment."
     )
@@ -631,8 +627,8 @@ def _process_message(
     mems = []
     if store_data:
         # Extract and store
-        has_gemini = is_available()
-        extracted = extract_with_gemini(user_message) if has_gemini else extract_local(user_message)
+        has_ai = is_available()
+        extracted = extract_with_openrouter(user_message) if has_ai else extract_local(user_message)
         for item in extracted:
             content = item["content"]
             category = item["category"]
@@ -645,7 +641,7 @@ def _process_message(
                 category,
                 DUPLICATE_SIMILARITY_THRESHOLD,
                 user_id=user_id,
-                thread_id=thread_id,
+                thread_id=None,
             ):
                 continue
             add_memory(
@@ -657,11 +653,11 @@ def _process_message(
             )
             stored.append(item)
 
-        # Compress per user/thread
-        compressed = maybe_compress(user_id=user_id, thread_id=thread_id)
+        # Compress at user scope so memory stays shared across chats for the same account.
+        compressed = maybe_compress(user_id=user_id, thread_id=None)
 
-        # Retrieve and generate with thread context only.
-        mems = retrieve(user_message, top_k=TOP_K_MEMORIES, user_id=user_id, thread_id=thread_id)
+        # Retrieve at user scope so facts learned in one chat are available in other chats.
+        mems = retrieve(user_message, top_k=TOP_K_MEMORIES, user_id=user_id, thread_id=None)
 
     memories_text = "\n".join(f"- [{m.category}] {m.content}" for m in mems) if mems else ""
     context = f"Relevant memories:\n{memories_text}\n\nRecent conversation:\n{buffer.format_for_context()}"
@@ -881,7 +877,8 @@ def health(user):
             return jsonify(payload), code
         thread_id = thread["id"]
     return jsonify({
-        "gemini_available": is_available(),
+        "openrouter_available": is_available(),
+        "ai_available": is_available(),
         "memory_count": get_memory_count(user_id=user["id"], thread_id=thread_id),
         "fallback_count": _fallback_count,
         "last_api_success": _last_api_success,

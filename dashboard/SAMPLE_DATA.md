@@ -27,4 +27,4 @@
 - Panel headers: "Conversation", "Retrieved memories", "Pipeline & health"
 - Action bar: "Compress", "Export", "Suggest memory"
 - Error state: "Using local fallback" + "Last API: 2m ago"
-- Success: "Gemini connected" + "Last success: just now"
+- Success: "AI connected" + "Last success: just now"
