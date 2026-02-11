@@ -140,6 +140,52 @@
                             </div>
                         </div>
                     </div>
+                    <div class="appearance-toolbar" id="appearance-toolbar" aria-label="Appearance studio">
+                        <button
+                            type="button"
+                            class="appearance-toggle-btn"
+                            id="appearance-toggle-btn"
+                            aria-label="Open appearance studio"
+                            aria-expanded="false"
+                            aria-controls="appearance-popover"
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M12 3v18"></path>
+                                <path d="M3 12h18"></path>
+                                <circle cx="12" cy="12" r="9"></circle>
+                            </svg>
+                        </button>
+                        <div class="appearance-popover" id="appearance-popover">
+                            <div class="appearance-title-row">
+                                <span class="appearance-title">Appearance Studio</span>
+                                <button type="button" class="appearance-reset-btn" id="appearance-reset-btn">Reset</button>
+                            </div>
+                            <label class="appearance-control">
+                                <span>Accent Color</span>
+                                <input id="appearance-accent" type="color" value="#0a84ff" />
+                            </label>
+                            <label class="appearance-control">
+                                <span>Color Opacity</span>
+                                <input id="appearance-opacity" type="range" min="40" max="100" step="1" value="92" />
+                            </label>
+                            <label class="appearance-control">
+                                <span>Background Intensity</span>
+                                <input id="appearance-intensity" type="range" min="30" max="130" step="1" value="100" />
+                            </label>
+                            <label class="appearance-control">
+                                <span>Roundness</span>
+                                <input id="appearance-radius" type="range" min="80" max="140" step="1" value="100" />
+                            </label>
+                            <label class="appearance-control">
+                                <span>Text Size</span>
+                                <input id="appearance-font" type="range" min="90" max="120" step="1" value="100" />
+                            </label>
+                            <label class="appearance-compact">
+                                <input id="appearance-compact" type="checkbox" />
+                                <span>Compact layout</span>
+                            </label>
+                        </div>
+                    </div>
                     <button class="logout-btn" id="logout-btn" type="button">Logout</button>
                 </div>
             </header>
@@ -154,8 +200,8 @@
                                 <path d="M2 12l10 5 10-5"/>
                             </svg>
                         </div>
-                        <h1 class="welcome-title">Welcome to the chat box</h1>
-                        <p class="welcome-sub" id="welcome-sub">Start a conversation — I'll remember what you share.</p>
+                        <h1 class="welcome-title">Memory Workspace</h1>
+                        <p class="welcome-sub" id="welcome-sub">Start a conversation and your important context will be carried forward.</p>
                     </div>
                 </div>
                 <button class="scroll-bottom-btn is-hidden" id="scroll-bottom-btn" type="button" aria-label="Scroll to latest">

@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import ssl
 import sys
 import urllib.error
 import urllib.request
@@ -59,6 +60,34 @@ def _max_tokens() -> Optional[int]:
     except ValueError:
         return None
     return value if value > 0 else None
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _ssl_context() -> Optional[ssl.SSLContext]:
+    """Build SSL context for OpenRouter requests."""
+    verify_ssl = _bool_env("OPENROUTER_VERIFY_SSL", True)
+    if not verify_ssl:
+        return ssl._create_unverified_context()
+
+    cafile = (
+        (os.environ.get("OPENROUTER_CA_BUNDLE") or "").strip()
+        or (os.environ.get("SSL_CERT_FILE") or "").strip()
+    )
+    if cafile:
+        return ssl.create_default_context(cafile=cafile)
+
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
 
 
 def is_available() -> bool:
@@ -130,13 +159,19 @@ def generate(prompt: str, system_instruction: Optional[str] = None) -> Optional[
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=60) as res:
+        with urllib.request.urlopen(req, timeout=60, context=_ssl_context()) as res:
             raw = json.loads(res.read().decode("utf-8"))
             choices = raw.get("choices") or []
             if not choices:
                 return None
             message = choices[0].get("message") or {}
             return _parse_content(message.get("content"))
+    except ssl.SSLError as e:
+        _log_error(
+            "TLS verification failed. Install/refresh CA certs or set OPENROUTER_CA_BUNDLE."
+            " As a temporary local workaround only, set OPENROUTER_VERIFY_SSL=0.",
+            e,
+        )
     except urllib.error.HTTPError as e:
         try:
             body = e.read().decode("utf-8", errors="ignore")

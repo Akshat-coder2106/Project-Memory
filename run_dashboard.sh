@@ -1,9 +1,14 @@
 #!/bin/bash
-# Run backend API + serve frontend
+# Run the app via Flask. The frontend is served by src.api on the same origin.
 
+set -euo pipefail
 cd "$(dirname "$0")"
 
-if [[ -x ".venv/bin/python" ]]; then
+if [[ -n "${VIRTUAL_ENV:-}" && -x "${VIRTUAL_ENV}/bin/python" ]]; then
+  PYTHON_BIN="${VIRTUAL_ENV}/bin/python"
+elif [[ -x "venv/bin/python" ]]; then
+  PYTHON_BIN="venv/bin/python"
+elif [[ -x ".venv/bin/python" ]]; then
   PYTHON_BIN=".venv/bin/python"
 elif command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN="python3"
@@ -11,17 +16,17 @@ else
   PYTHON_BIN="python"
 fi
 
-echo "Starting backend API on http://127.0.0.1:5000"
-"$PYTHON_BIN" -m src.api &
-API_PID=$!
+HOST="${HOST:-127.0.0.1}"
+PORT="${PORT:-5000}"
 
-sleep 2
-echo "Serving frontend on http://127.0.0.1:8080"
-cd dashboard && "$PYTHON_BIN" -m http.server 8080 &
-SERVER_PID=$!
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "Port $PORT is already in use."
+  echo "Stop the existing process or run with another port, for example:"
+  echo "  PORT=5001 ./run_dashboard.sh"
+  exit 1
+fi
 
-echo ""
-echo "Open http://localhost:8080 in your browser"
-echo "Press Ctrl+C to stop"
-trap "kill $API_PID $SERVER_PID 2>/dev/null; exit" INT TERM
-wait
+echo "Starting app on http://$HOST:$PORT"
+echo "Open http://$HOST:$PORT in your browser"
+echo "Using Python: $PYTHON_BIN"
+exec "$PYTHON_BIN" -m src.api

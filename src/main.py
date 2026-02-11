@@ -65,7 +65,7 @@ _DATETIME_QUERY_RE = re.compile(
     r"today'?s\s+date|date\s+today|current\s+date|"
     r"what\s+day\s+is\s+it|which\s+day\s+is\s+it|"
     r"date\s+and\s+time|current\s+date\s+and\s+time|"
-    r"tomorrow\s+date|tommorow\s+date|yesterday\s+date)",
+    r"tomorrow'?s?\s+date|tommorow'?s?\s+date|yesterday'?s?\s+date)",
     re.IGNORECASE,
 )
 
@@ -112,9 +112,9 @@ def _relative_day_offset(text: str) -> int:
         return 2
     if re.search(r"\b(day\s+before\s+yesterday|before\s+yesterday)\b", t):
         return -2
-    if re.search(r"\b(tomorrow|tommorow|tmrw|tmr)\b", t):
+    if re.search(r"\b(tomorrow|tomorrows|tomorrow's|tommorow|tommorows|tommorow's|tmrw|tmr)\b", t):
         return 1
-    if re.search(r"\byesterday\b", t):
+    if re.search(r"\b(yesterday|yesterdays|yesterday's)\b", t):
         return -1
     m = re.search(r"\bin\s+(\d+)\s+days?\b", t)
     if m:

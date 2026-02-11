@@ -6,6 +6,7 @@ const API_BASE = "";
 const MOBILE_BREAKPOINT = 1024;
 const THEME_STORAGE_KEY = "memory_theme_v1";
 const LAST_USERNAME_STORAGE_KEY = "memory_last_username_v1";
+const APPEARANCE_STORAGE_KEY = "memory_appearance_v1";
 const AVAILABLE_THEMES = ["default", "gpt", "project", "white", "black", "sunset"];
 const THEME_META_COLORS = {
   default: "#060910",
@@ -14,6 +15,14 @@ const THEME_META_COLORS = {
   white: "#f4f8ff",
   black: "#040507",
   sunset: "#13090a",
+};
+const APPEARANCE_DEFAULTS = {
+  accent: "#0a84ff",
+  opacity: 92,
+  intensity: 100,
+  radius: 100,
+  font: 100,
+  compact: false,
 };
 
 function getClientId() {
@@ -27,6 +36,7 @@ const state = {
   authView: "choice",
   theme: "default",
   themePickerOpen: false,
+  appearanceOpen: false,
   threads: [],
   activeThreadId: null,
   sidebarOpen: window.innerWidth > MOBILE_BREAKPOINT,
@@ -168,6 +178,7 @@ function initThemePicker() {
 
   toggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
+    setAppearancePanelOpen(false);
     setThemePickerOpen(!state.themePickerOpen);
   });
 
@@ -193,6 +204,141 @@ function initThemePicker() {
 
   applyTheme(loadSavedTheme(), { persist: false });
   setThemePickerOpen(false);
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function hexToRgb(hex) {
+  const raw = String(hex || "").trim().replace("#", "");
+  if (!/^[a-fA-F0-9]{6}$/.test(raw)) return [10, 132, 255];
+  return [
+    parseInt(raw.slice(0, 2), 16),
+    parseInt(raw.slice(2, 4), 16),
+    parseInt(raw.slice(4, 6), 16),
+  ];
+}
+
+function loadSavedAppearance() {
+  try {
+    const raw = localStorage.getItem(APPEARANCE_STORAGE_KEY);
+    if (!raw) return { ...APPEARANCE_DEFAULTS };
+    const parsed = JSON.parse(raw);
+    return {
+      accent: /^#[a-fA-F0-9]{6}$/.test(parsed.accent || "") ? parsed.accent : APPEARANCE_DEFAULTS.accent,
+      opacity: clamp(Number(parsed.opacity) || APPEARANCE_DEFAULTS.opacity, 40, 100),
+      intensity: clamp(Number(parsed.intensity) || APPEARANCE_DEFAULTS.intensity, 30, 130),
+      radius: clamp(Number(parsed.radius) || APPEARANCE_DEFAULTS.radius, 80, 140),
+      font: clamp(Number(parsed.font) || APPEARANCE_DEFAULTS.font, 90, 120),
+      compact: Boolean(parsed.compact),
+    };
+  } catch (_) {
+    return { ...APPEARANCE_DEFAULTS };
+  }
+}
+
+function applyAppearance(appearance, options = {}) {
+  const next = {
+    accent: appearance.accent,
+    opacity: clamp(Number(appearance.opacity), 40, 100),
+    intensity: clamp(Number(appearance.intensity), 30, 130),
+    radius: clamp(Number(appearance.radius), 80, 140),
+    font: clamp(Number(appearance.font), 90, 120),
+    compact: Boolean(appearance.compact),
+  };
+  const [r, g, b] = hexToRgb(next.accent);
+  const root = document.documentElement;
+  root.style.setProperty("--accent-user", next.accent);
+  root.style.setProperty("--accent-user-rgb", `${r}, ${g}, ${b}`);
+  root.style.setProperty("--surface-opacity", String(next.opacity / 100));
+  root.style.setProperty("--bg-intensity", String(next.intensity / 100));
+  root.style.setProperty("--radius-factor", String(next.radius / 100));
+  root.style.setProperty("--font-scale", String(next.font / 100));
+  document.body.classList.toggle("compact-ui", next.compact);
+  if (options.persist !== false) {
+    try {
+      localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(next));
+    } catch (_) {
+      // Ignore storage write failures.
+    }
+  }
+}
+
+function setAppearancePanelOpen(open) {
+  const toolbar = document.getElementById("appearance-toolbar");
+  const toggle = document.getElementById("appearance-toggle-btn");
+  if (!toolbar || !toggle) return;
+  const nextOpen = !!open;
+  state.appearanceOpen = nextOpen;
+  toolbar.classList.toggle("is-open", nextOpen);
+  toggle.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+}
+
+function syncAppearanceControls(appearance) {
+  const accent = document.getElementById("appearance-accent");
+  const opacity = document.getElementById("appearance-opacity");
+  const intensity = document.getElementById("appearance-intensity");
+  const radius = document.getElementById("appearance-radius");
+  const font = document.getElementById("appearance-font");
+  const compact = document.getElementById("appearance-compact");
+  if (accent) accent.value = appearance.accent;
+  if (opacity) opacity.value = String(appearance.opacity);
+  if (intensity) intensity.value = String(appearance.intensity);
+  if (radius) radius.value = String(appearance.radius);
+  if (font) font.value = String(appearance.font);
+  if (compact) compact.checked = Boolean(appearance.compact);
+}
+
+function readAppearanceFromControls() {
+  return {
+    accent: (document.getElementById("appearance-accent") || {}).value || APPEARANCE_DEFAULTS.accent,
+    opacity: Number((document.getElementById("appearance-opacity") || {}).value || APPEARANCE_DEFAULTS.opacity),
+    intensity: Number((document.getElementById("appearance-intensity") || {}).value || APPEARANCE_DEFAULTS.intensity),
+    radius: Number((document.getElementById("appearance-radius") || {}).value || APPEARANCE_DEFAULTS.radius),
+    font: Number((document.getElementById("appearance-font") || {}).value || APPEARANCE_DEFAULTS.font),
+    compact: Boolean((document.getElementById("appearance-compact") || {}).checked),
+  };
+}
+
+function initAppearanceStudio() {
+  const toolbar = document.getElementById("appearance-toolbar");
+  const toggle = document.getElementById("appearance-toggle-btn");
+  const reset = document.getElementById("appearance-reset-btn");
+  if (!toolbar || !toggle || !reset) return;
+
+  const saved = loadSavedAppearance();
+  syncAppearanceControls(saved);
+  applyAppearance(saved, { persist: false });
+  setAppearancePanelOpen(false);
+
+  const onChange = () => applyAppearance(readAppearanceFromControls());
+  ["appearance-accent", "appearance-opacity", "appearance-intensity", "appearance-radius", "appearance-font", "appearance-compact"]
+    .map((id) => document.getElementById(id))
+    .filter(Boolean)
+    .forEach((el) => {
+      el.addEventListener("input", onChange);
+      el.addEventListener("change", onChange);
+    });
+
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setThemePickerOpen(false);
+    setAppearancePanelOpen(!state.appearanceOpen);
+  });
+
+  reset.addEventListener("click", () => {
+    syncAppearanceControls(APPEARANCE_DEFAULTS);
+    applyAppearance(APPEARANCE_DEFAULTS);
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!toolbar.contains(e.target)) setAppearancePanelOpen(false);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setAppearancePanelOpen(false);
+  });
 }
 
 function getUserAvatarLetter() {
@@ -503,12 +649,25 @@ function setUserUI(user) {
   userPill.textContent = `@${user.username}`;
 }
 
+function setServiceStatus(mode = "active") {
+  const indicator = document.querySelector(".status-indicator");
+  const statusText = indicator ? indicator.querySelector(".status-text") : null;
+  if (!indicator || !statusText) return;
+  if (mode === "degraded") {
+    indicator.classList.add("degraded");
+    statusText.textContent = "Limited";
+    return;
+  }
+  indicator.classList.remove("degraded");
+  statusText.textContent = "Active";
+}
+
 function updateHeaderThreadUI() {
   const welcomeSub = document.getElementById("welcome-sub");
   const input = document.getElementById("chat-input");
 
   if (welcomeSub) {
-    welcomeSub.textContent = "Start a conversation — I'll remember what you share.";
+    welcomeSub.textContent = "Start a conversation and your important context will be carried forward.";
   }
 
   if (input) {
@@ -574,8 +733,8 @@ function renderMessages(messages, options = {}) {
             <path d="M2 12l10 5 10-5"></path>
           </svg>
         </div>
-        <h1 class="welcome-title">Welcome to the chat box</h1>
-        <p class="welcome-sub" id="welcome-sub">Start a conversation — I'll remember what you share.</p>
+        <h1 class="welcome-title">Memory Workspace</h1>
+        <p class="welcome-sub" id="welcome-sub">Start a conversation and your important context will be carried forward.</p>
       </div>
     `;
   }
@@ -821,6 +980,8 @@ async function sendMessage(text) {
 
     const assistantMessage = createMessageElement("assistant", "", new Date().toISOString());
     const replyText = data.reply || "No response.";
+    const degradedReply = Boolean(data.degraded) || /temporarily unavailable|can't connect to the ai/i.test(replyText);
+    setServiceStatus(degradedReply ? "degraded" : "active");
     container.appendChild(assistantMessage);
     const content = assistantMessage.querySelector(".message-content");
     animateAssistantText(content, replyText, () => smoothScrollToBottom(container, 160));
@@ -848,6 +1009,7 @@ async function sendMessage(text) {
       "Could not reach backend.",
       new Date().toISOString()
     );
+    setServiceStatus("degraded");
     const errContent = errorMessage.querySelector(".message-content");
     if (errContent) errContent.style.color = "#ff7b72";
     container.appendChild(errorMessage);
@@ -1178,9 +1340,11 @@ function init() {
     setTimeout(updateViewportHeightVar, 140);
   });
   initThemePicker();
+  initAppearanceStudio();
   addTypingIndicatorStyles();
   addKeyboardShortcuts();
   enhanceScrollBehavior();
+  setServiceStatus("active");
 
   const form = document.getElementById("chat-form");
   const input = document.getElementById("chat-input");

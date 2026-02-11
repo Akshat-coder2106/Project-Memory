@@ -11,6 +11,7 @@ numpy>=1.24.0
 # Optional: env variables
 python-dotenv>=1.0.0
 duckduckgo-search>=6.2.0
+certifi>=2024.2.2
 
 # Web API + dashboard
 flask>=3.0.0

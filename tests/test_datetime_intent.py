@@ -6,8 +6,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from api import _datetime_mode as api_datetime_mode
+from api import _current_datetime_reply as api_current_datetime_reply
 from api import _is_datetime_request as api_is_datetime_request
 from main import _datetime_mode as main_datetime_mode
+from main import _current_datetime_reply as main_current_datetime_reply
 from main import _is_datetime_request as main_is_datetime_request
 
 
@@ -45,3 +47,15 @@ def test_direct_datetime_queries_still_work():
     assert main_datetime_mode("what is tomorrow date") == "date"
     assert main_datetime_mode("what date will it be in 3 days") == "date"
     assert main_datetime_mode("what year is it") == "date"
+
+
+def test_tomorrows_and_yesterdays_date_aliases():
+    api_tomorrow = api_current_datetime_reply("tomorrows date")
+    api_yesterday = api_current_datetime_reply("yesterdays date")
+    main_tomorrow = main_current_datetime_reply("tomorrows date")
+    main_yesterday = main_current_datetime_reply("yesterdays date")
+
+    assert api_tomorrow.startswith("Tomorrow is ")
+    assert api_yesterday.startswith("Yesterday was ")
+    assert main_tomorrow.startswith("Tomorrow is ")
+    assert main_yesterday.startswith("Yesterday was ")
