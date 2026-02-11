@@ -75,9 +75,7 @@ _DATETIME_QUERY_RE = re.compile(
     r"today'?s\s+date|date\s+today|current\s+date|"
     r"what\s+day\s+is\s+it|which\s+day\s+is\s+it|"
     r"date\s+and\s+time|current\s+date\s+and\s+time|"
-    r"tomorrow\s+date|tommorow\s+date|yesterday\s+date|"
-    r"\d+\s*days?\s*(after|before|from|ago|later)|"
-    r"(in|after|before)\s+\d+\s*days?)",
+    r"tomorrow\s+date|tommorow\s+date|yesterday\s+date)",
     re.IGNORECASE,
 )
 
@@ -144,16 +142,10 @@ def _datetime_mode(text: str) -> str:
     has_time = ("time" in t) or ("clock" in t) or ("hour" in t)
     has_date = (
         ("date" in t)
-        or ("today" in t)
-        or ("tomorrow" in t)
-        or ("tommorow" in t)
-        or ("yesterday" in t)
-        or ("month" in t)
-        or ("year" in t)
         or ("what day is it" in t)
         or ("which day is it" in t)
-        or bool(re.search(r"\b(in|after|before)\s+\d+\s*days?\b", t))
-        or bool(re.search(r"\b\d+\s*days?\s*(after|before|from|ago|later)\b", t))
+        or bool(re.search(r"\b(what|which)\s+(day|date|month|year)\b", t))
+        or bool(re.search(r"\b(current|today'?s)\s+(date|day|month|year)\b", t))
     )
     if has_time and has_date:
         return "both"

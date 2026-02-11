@@ -13,12 +13,10 @@
 <body>
     <div class="grain-overlay"></div>
     <div class="ambient-gradient"></div>
-
     <div class="auth-screen" id="auth-screen">
         <div class="auth-card">
             <div class="auth-view" id="auth-view-choice">
                 <div class="auth-badge">Memory Access</div>
-                <h1 class="auth-title">Continue</h1>
                 <p class="auth-subtitle">Choose how you want to access your memory ID.</p>
                 <div class="auth-choice-actions">
                     <button type="button" class="auth-button auth-button-primary" id="go-signin">Sign In</button>
@@ -113,6 +111,34 @@
                         <span class="status-text">Active</span>
                     </div>
                     <div class="user-pill" id="user-pill">@user</div>
+                    <div class="theme-toolbar" id="theme-toolbar" aria-label="Background style picker">
+                        <button
+                            type="button"
+                            class="theme-toggle-btn"
+                            id="theme-toggle-btn"
+                            aria-label="Open background picker"
+                            aria-expanded="false"
+                            aria-controls="theme-popover"
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="13.5" cy="6.5" r="2.5"></circle>
+                                <circle cx="17.5" cy="12.5" r="2.5"></circle>
+                                <circle cx="13.5" cy="18.5" r="2.5"></circle>
+                                <circle cx="6.5" cy="15.5" r="2.5"></circle>
+                                <path d="M5 9a7 7 0 1 1 7 7"></path>
+                            </svg>
+                        </button>
+                        <div class="theme-popover" id="theme-popover">
+                            <span class="theme-toolbar-label">Background</span>
+                            <div class="theme-swatches" role="radiogroup" aria-label="Select background style">
+                                <button type="button" role="radio" aria-checked="true" class="theme-swatch theme-swatch-default" data-theme="default" title="Default" aria-label="Default background"></button>
+                                <button type="button" role="radio" aria-checked="false" class="theme-swatch theme-swatch-gpt" data-theme="gpt" title="GPT" aria-label="GPT style background"></button>
+                                <button type="button" role="radio" aria-checked="false" class="theme-swatch theme-swatch-project" data-theme="project" title="Project" aria-label="Project style background"></button>
+                                <button type="button" role="radio" aria-checked="false" class="theme-swatch theme-swatch-white" data-theme="white" title="White" aria-label="White background"></button>
+                                <button type="button" role="radio" aria-checked="false" class="theme-swatch theme-swatch-sunset" data-theme="sunset" title="Sunset" aria-label="Sunset background"></button>
+                            </div>
+                        </div>
+                    </div>
                     <button class="logout-btn" id="logout-btn" type="button">Logout</button>
                 </div>
             </header>

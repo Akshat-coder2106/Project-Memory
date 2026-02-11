@@ -5,6 +5,15 @@
 const API_BASE = "";
 const MOBILE_BREAKPOINT = 1024;
 const CLIENT_ID_STORAGE_KEY = "memory_client_id_v1";
+const THEME_STORAGE_KEY = "memory_theme_v1";
+const AVAILABLE_THEMES = ["default", "gpt", "project", "white", "sunset"];
+const THEME_META_COLORS = {
+  default: "#060910",
+  gpt: "#050b09",
+  project: "#050919",
+  white: "#f4f8ff",
+  sunset: "#13090a",
+};
 
 function createClientId() {
   if (window.crypto && window.crypto.getRandomValues) {
@@ -33,6 +42,8 @@ const CLIENT_ID = getClientId();
 const state = {
   user: null,
   authView: "choice",
+  theme: "default",
+  themePickerOpen: false,
   threads: [],
   activeThreadId: null,
   sidebarOpen: window.innerWidth > MOBILE_BREAKPOINT,
@@ -54,6 +65,92 @@ const AUTH_MESSAGE_IDS = {
 
 function isMobileViewport() {
   return window.innerWidth <= MOBILE_BREAKPOINT;
+}
+
+function normalizeThemeName(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  return AVAILABLE_THEMES.includes(value) ? value : "default";
+}
+
+function loadSavedTheme() {
+  try {
+    return normalizeThemeName(localStorage.getItem(THEME_STORAGE_KEY));
+  } catch (_) {
+    return "default";
+  }
+}
+
+function paintThemeSelection(theme) {
+  const activeTheme = normalizeThemeName(theme);
+  document.querySelectorAll(".theme-swatch[data-theme]").forEach((btn) => {
+    const isActive = btn.dataset.theme === activeTheme;
+    btn.classList.toggle("is-active", isActive);
+    btn.setAttribute("aria-checked", isActive ? "true" : "false");
+  });
+}
+
+function applyTheme(theme, options = {}) {
+  const nextTheme = normalizeThemeName(theme);
+  const shouldPersist = options.persist !== false;
+  state.theme = nextTheme;
+  document.body.dataset.theme = nextTheme;
+  document.documentElement.style.colorScheme = nextTheme === "white" ? "light" : "dark";
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) {
+    themeMeta.setAttribute("content", THEME_META_COLORS[nextTheme] || THEME_META_COLORS.default);
+  }
+  paintThemeSelection(nextTheme);
+  if (!shouldPersist) return;
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+  } catch (_) {
+    // Ignore storage write failures.
+  }
+}
+
+function setThemePickerOpen(open) {
+  const toolbar = document.getElementById("theme-toolbar");
+  const toggleBtn = document.getElementById("theme-toggle-btn");
+  if (!toolbar || !toggleBtn) return;
+  const nextOpen = !!open;
+  state.themePickerOpen = nextOpen;
+  toolbar.classList.toggle("is-open", nextOpen);
+  toggleBtn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+  toggleBtn.setAttribute("aria-label", nextOpen ? "Close background picker" : "Open background picker");
+}
+
+function initThemePicker() {
+  const toolbar = document.getElementById("theme-toolbar");
+  const toggleBtn = document.getElementById("theme-toggle-btn");
+  if (!toolbar || !toggleBtn) return;
+
+  toggleBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setThemePickerOpen(!state.themePickerOpen);
+  });
+
+  document.querySelectorAll(".theme-swatch[data-theme]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      applyTheme(btn.dataset.theme);
+      setThemePickerOpen(false);
+    });
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!toolbar.contains(e.target)) {
+      setThemePickerOpen(false);
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      setThemePickerOpen(false);
+    }
+  });
+
+  applyTheme(loadSavedTheme(), { persist: false });
+  setThemePickerOpen(false);
 }
 
 function getUserAvatarLetter() {
@@ -982,6 +1079,7 @@ function initThreadInteractions() {
 }
 
 function init() {
+  initThemePicker();
   addTypingIndicatorStyles();
   addKeyboardShortcuts();
   enhanceScrollBehavior();
