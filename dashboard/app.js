@@ -63,6 +63,12 @@ const AUTH_MESSAGE_IDS = {
   signup: "auth-signup-message",
 };
 
+function updateViewportHeightVar() {
+  const vh = window.innerHeight || document.documentElement.clientHeight;
+  if (!vh) return;
+  document.documentElement.style.setProperty("--app-height", `${vh}px`);
+}
+
 function isMobileViewport() {
   return window.innerWidth <= MOBILE_BREAKPOINT;
 }
@@ -397,6 +403,7 @@ function toggleSidebar() {
 function toggleApp(authenticated) {
   const authScreen = document.getElementById("auth-screen");
   const chatApp = document.getElementById("chat-app");
+  document.body.classList.toggle("chat-open", !!authenticated);
   if (authenticated) {
     authScreen.classList.add("is-hidden");
     chatApp.classList.remove("is-hidden");
@@ -1064,6 +1071,7 @@ function initThreadInteractions() {
   sidebarOverlay.addEventListener("click", () => setSidebarOpen(false));
 
   window.addEventListener("resize", () => {
+    updateViewportHeightVar();
     if (!state.user) return;
     if (!isMobileViewport() && state.sidebarOpen === false) {
       // Keep explicit collapsed state on desktop.
@@ -1079,6 +1087,10 @@ function initThreadInteractions() {
 }
 
 function init() {
+  updateViewportHeightVar();
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", updateViewportHeightVar);
+  }
   initThemePicker();
   addTypingIndicatorStyles();
   addKeyboardShortcuts();
