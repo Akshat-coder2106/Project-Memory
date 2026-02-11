@@ -3,6 +3,7 @@
 import os
 import sqlite3
 import json
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,28 @@ elif _running_on_render:
     DEFAULT_DB_PATH = Path("/var/data/memories.db")
 else:
     DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "memories.db"
+
+LEGACY_DB_PATH = PROJECT_ROOT / "data" / "memories.db"
+
+
+def _maybe_migrate_legacy_db(target_path: Path) -> None:
+    """
+    One-time safety migration:
+    if runtime path changed (e.g. to /var/data on Render) and target DB
+    doesn't exist yet, copy the legacy DB so users do not need to sign up again.
+    """
+    try:
+        if target_path == LEGACY_DB_PATH:
+            return
+        if target_path.exists():
+            return
+        if not LEGACY_DB_PATH.exists():
+            return
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(LEGACY_DB_PATH), str(target_path))
+    except Exception:
+        # Non-fatal: app can still start with a fresh DB.
+        pass
 
 
 @dataclass
@@ -51,6 +74,7 @@ class Memory:
 def _get_connection(db_path: Path = None) -> sqlite3.Connection:
     """Get DB connection, creating data dir and table if needed."""
     path = db_path or DEFAULT_DB_PATH
+    _maybe_migrate_legacy_db(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row

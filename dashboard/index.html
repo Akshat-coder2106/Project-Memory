@@ -32,9 +32,9 @@
                 <p class="auth-subtitle">Enter your username and password to access your account.</p>
                 <form class="auth-form" id="signin-form">
                     <label class="auth-label" for="signin-username">Username</label>
-                    <input id="signin-username" class="auth-input" type="text" autocomplete="username" minlength="3" maxlength="40" required>
+                    <input id="signin-username" name="username" class="auth-input" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" minlength="3" maxlength="40" required>
                     <label class="auth-label" for="signin-password">Password</label>
-                    <input id="signin-password" class="auth-input" type="password" autocomplete="current-password" minlength="6" required>
+                    <input id="signin-password" name="current-password" class="auth-input" type="password" autocomplete="current-password" minlength="6" required>
                     <div class="auth-actions">
                         <button type="submit" class="auth-button auth-button-primary" id="signin-btn">Sign In</button>
                     </div>
@@ -49,11 +49,11 @@
                 <p class="auth-subtitle">Create your username and password for a new memory ID.</p>
                 <form class="auth-form" id="signup-form">
                     <label class="auth-label" for="signup-username">Username</label>
-                    <input id="signup-username" class="auth-input" type="text" autocomplete="username" minlength="3" maxlength="40" required>
+                    <input id="signup-username" name="username" class="auth-input" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" minlength="3" maxlength="40" required>
                     <label class="auth-label" for="signup-password">Password</label>
-                    <input id="signup-password" class="auth-input" type="password" autocomplete="new-password" minlength="6" required>
+                    <input id="signup-password" name="new-password" class="auth-input" type="password" autocomplete="new-password" minlength="6" required>
                     <label class="auth-label" for="signup-confirm-password">Confirm Password</label>
-                    <input id="signup-confirm-password" class="auth-input" type="password" autocomplete="new-password" minlength="6" required>
+                    <input id="signup-confirm-password" name="confirm-password" class="auth-input" type="password" autocomplete="new-password" minlength="6" required>
                     <div class="auth-actions">
                         <button type="submit" class="auth-button auth-button-primary" id="signup-btn">Sign Up</button>
                     </div>
