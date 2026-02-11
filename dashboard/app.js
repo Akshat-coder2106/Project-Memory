@@ -309,6 +309,38 @@ function formatMessageTime(ts) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+async function copyTextToClipboard(text) {
+  const value = String(text || "");
+  if (!value) return false;
+
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch (_) {
+      // Fallback to execCommand path below.
+    }
+  }
+
+  try {
+    const textArea = document.createElement("textarea");
+    textArea.value = value;
+    textArea.setAttribute("readonly", "");
+    textArea.style.position = "fixed";
+    textArea.style.opacity = "0";
+    textArea.style.pointerEvents = "none";
+    textArea.style.left = "-9999px";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const copied = document.execCommand("copy");
+    textArea.remove();
+    return !!copied;
+  } catch (_) {
+    return false;
+  }
+}
+
 function createMessageElement(role, content, createdAt, opts = {}) {
   const message = document.createElement("div");
   message.className = `message ${role}${opts.loading ? " loading" : ""}`;
@@ -322,9 +354,23 @@ function createMessageElement(role, content, createdAt, opts = {}) {
     <div class="message-avatar">${avatar}</div>
     <div class="message-body">
       <div class="message-content">${escapeHtml(content || "")}</div>
+      <div class="message-actions">
+        <button type="button" class="message-copy-btn" aria-label="Copy message">Copy</button>
+      </div>
       <div class="message-meta">${timeText}</div>
     </div>
   `;
+  const copyBtn = message.querySelector(".message-copy-btn");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const contentEl = message.querySelector(".message-content");
+      const raw = contentEl ? contentEl.innerText : "";
+      const copied = await copyTextToClipboard((raw || "").trim());
+      showNotification(copied ? "Copied" : "Copy failed", copied ? "info" : "error");
+    });
+  }
   return message;
 }
 

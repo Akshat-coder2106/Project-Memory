@@ -1941,6 +1941,83 @@ body[data-theme="sunset"] .thread-meta {
     content: none;
 }
 
+.message-actions {
+    display: flex;
+    align-items: center;
+    min-height: 0;
+    opacity: 0;
+    transform: translateY(-2px);
+    pointer-events: none;
+    transition: opacity 0.2s var(--ease-fluid), transform 0.2s var(--ease-fluid);
+}
+
+.message.user .message-actions {
+    justify-content: flex-end;
+}
+
+.message.assistant .message-actions {
+    justify-content: flex-start;
+}
+
+.message-copy-btn {
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: linear-gradient(180deg, rgba(33, 38, 49, 0.92), rgba(22, 26, 36, 0.94));
+    color: var(--text-secondary);
+    border-radius: 999px;
+    padding: 0.24rem 0.62rem;
+    font-size: 0.71rem;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    transition: all 0.2s var(--ease-fluid);
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.24);
+}
+
+.message-copy-btn:hover {
+    border-color: rgba(145, 188, 235, 0.5);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.message-copy-btn:active {
+    transform: translateY(0);
+}
+
+.message-copy-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(90, 212, 255, 0.48);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .message:hover .message-actions,
+    .message:focus-within .message-actions {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+    }
+}
+
+@media (hover: none), (pointer: coarse) {
+    .message-actions {
+        opacity: 1;
+        transform: none;
+        pointer-events: auto;
+    }
+}
+
+body[data-theme="white"] .message-copy-btn {
+    border-color: rgba(15, 40, 82, 0.2);
+    background: linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(240, 246, 254, 0.98));
+    color: rgba(33, 56, 91, 0.92);
+    box-shadow: 0 3px 10px rgba(57, 89, 142, 0.12);
+}
+
+body[data-theme="white"] .message-copy-btn:hover {
+    border-color: rgba(39, 90, 177, 0.46);
+    color: rgba(18, 42, 80, 1);
+    box-shadow: 0 5px 12px rgba(57, 89, 142, 0.14);
+}
+
 .scroll-bottom-btn {
     position: absolute;
     right: var(--shell-padding);
