@@ -2121,24 +2121,29 @@ textarea:focus-visible {
         left: 0;
         bottom: 0;
         width: min(88vw, 320px);
-        transform: translateX(-105%);
+        transform: translateX(calc(-100% - 2.25rem));
         z-index: 130;
         box-shadow: 18px 0 44px rgba(0, 0, 0, 0.45);
         opacity: 1;
         pointer-events: none;
     }
 
+    .chat-app:not(.sidebar-mobile-open) .chat-sidebar {
+        box-shadow: none;
+    }
+
     .chat-app.sidebar-collapsed .chat-sidebar {
         width: min(88vw, 320px);
         padding: calc(0.82rem + env(safe-area-inset-top)) 0.82rem 0.9rem;
         border-right-color: rgba(255, 255, 255, 0.08);
-        transform: translateX(-105%);
+        transform: translateX(calc(-100% - 2.25rem));
         opacity: 1;
         pointer-events: none;
     }
 
     .chat-app.sidebar-mobile-open .chat-sidebar {
         transform: translateX(0);
+        box-shadow: 18px 0 44px rgba(0, 0, 0, 0.45);
         pointer-events: auto;
     }
 
