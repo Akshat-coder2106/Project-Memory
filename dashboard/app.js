@@ -4,7 +4,6 @@
 
 const API_BASE = "";
 const MOBILE_BREAKPOINT = 1024;
-const CLIENT_ID_STORAGE_KEY = "memory_client_id_v1";
 const THEME_STORAGE_KEY = "memory_theme_v1";
 const AVAILABLE_THEMES = ["default", "gpt", "project", "white", "sunset"];
 const THEME_META_COLORS = {
@@ -15,26 +14,8 @@ const THEME_META_COLORS = {
   sunset: "#13090a",
 };
 
-function createClientId() {
-  if (window.crypto && window.crypto.getRandomValues) {
-    const bytes = new Uint8Array(16);
-    window.crypto.getRandomValues(bytes);
-    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-  }
-  return `client_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
 function getClientId() {
-  const valid = /^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$/;
-  try {
-    const existing = (localStorage.getItem(CLIENT_ID_STORAGE_KEY) || "").trim();
-    if (valid.test(existing)) return existing;
-    const created = createClientId();
-    localStorage.setItem(CLIENT_ID_STORAGE_KEY, created);
-    return created;
-  } catch (_) {
-    return "default";
-  }
+  return "default";
 }
 
 const CLIENT_ID = getClientId();
@@ -64,13 +45,39 @@ const AUTH_MESSAGE_IDS = {
 };
 
 function updateViewportHeightVar() {
-  const vh = window.innerHeight || document.documentElement.clientHeight;
+  const baseHeight = window.innerHeight || document.documentElement.clientHeight;
+  const vv = window.visualViewport;
+  const vh = vv ? Math.round(vv.height) : baseHeight;
   if (!vh) return;
   document.documentElement.style.setProperty("--app-height", `${vh}px`);
+  const messages = document.getElementById("chat-messages");
+  if (messages && isNearBottom(messages, 180)) {
+    requestAnimationFrame(() => {
+      messages.scrollTop = messages.scrollHeight;
+      updateScrollBottomButton();
+    });
+  }
 }
 
 function isMobileViewport() {
   return window.innerWidth <= MOBILE_BREAKPOINT;
+}
+
+function isNearBottom(container, threshold = 120) {
+  if (!container) return true;
+  const remaining = container.scrollHeight - container.scrollTop - container.clientHeight;
+  return remaining <= threshold;
+}
+
+function focusComposer(options = {}) {
+  const input = document.getElementById("chat-input");
+  if (!input) return;
+  if (isMobileViewport() && !options.allowMobile) return;
+  try {
+    input.focus({ preventScroll: true });
+  } catch (_) {
+    input.focus();
+  }
 }
 
 function normalizeThemeName(raw) {
@@ -409,7 +416,7 @@ function toggleApp(authenticated) {
     chatApp.classList.remove("is-hidden");
     state.sidebarOpen = !isMobileViewport();
     applySidebarState();
-    document.getElementById("chat-input").focus();
+    focusComposer({ allowMobile: false });
   } else {
     chatApp.classList.add("is-hidden");
     authScreen.classList.remove("is-hidden");
@@ -610,7 +617,7 @@ async function createThread() {
   renderMessages([]);
   updateHeaderThreadUI();
   if (isMobileViewport()) setSidebarOpen(false);
-  document.getElementById("chat-input").focus();
+  focusComposer({ allowMobile: false });
 }
 
 async function selectThread(threadId) {
@@ -774,7 +781,7 @@ async function sendMessage(text) {
     input.disabled = false;
     autoResizeComposer(input);
     btn.disabled = input.value.trim().length === 0;
-    input.focus();
+    focusComposer({ allowMobile: true });
     updateScrollBottomButton();
   }
 }
@@ -844,7 +851,7 @@ function addKeyboardShortcuts() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
       e.preventDefault();
       if (state.user) {
-        document.getElementById("chat-input").focus();
+        focusComposer({ allowMobile: true });
       } else {
         focusAuthView(state.authView);
       }
@@ -876,9 +883,7 @@ function enhanceScrollBehavior() {
     updateScrollBottomButton();
     if (state.suspendAutoScroll) return;
     if (!isUserScrolling) {
-      const isNearBottom =
-        container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-      if (isNearBottom) smoothScrollToBottom(container);
+      if (isNearBottom(container, 100)) smoothScrollToBottom(container);
     }
   });
   observer.observe(container, { childList: true, subtree: true });
@@ -1090,7 +1095,11 @@ function init() {
   updateViewportHeightVar();
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", updateViewportHeightVar);
+    window.visualViewport.addEventListener("scroll", updateViewportHeightVar);
   }
+  window.addEventListener("orientationchange", () => {
+    setTimeout(updateViewportHeightVar, 140);
+  });
   initThemePicker();
   addTypingIndicatorStyles();
   addKeyboardShortcuts();
@@ -1111,6 +1120,15 @@ function init() {
   form.addEventListener("submit", handleSubmit);
   input.addEventListener("input", handleInput);
   input.addEventListener("keydown", handleKeyDown);
+  input.addEventListener("focus", () => {
+    document.body.classList.add("composer-focused");
+    setTimeout(updateViewportHeightVar, 40);
+    setTimeout(updateViewportHeightVar, 180);
+  });
+  input.addEventListener("blur", () => {
+    document.body.classList.remove("composer-focused");
+    setTimeout(updateViewportHeightVar, 100);
+  });
   autoResizeComposer(input);
   sendBtn.disabled = true;
   logoutBtn.addEventListener("click", handleLogout);

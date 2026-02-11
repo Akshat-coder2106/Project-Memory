@@ -51,6 +51,7 @@
     --content-max-width: 1120px;
     --shell-padding: clamp(0.875rem, 2.6vw, 2rem);
     --app-height: 100dvh;
+    --composer-height-mobile: 5.9rem;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -813,6 +814,8 @@ body[data-theme="sunset"] .thread-meta {
     z-index: 3;
     flex: 1;
     min-width: 0;
+    min-height: 0;
+    height: 100%;
     display: flex;
     flex-direction: column;
 }
@@ -1480,11 +1483,13 @@ body[data-theme="sunset"] .thread-meta {
     flex-direction: column;
     min-height: 0;
     position: relative;
+    overflow: hidden;
     overscroll-behavior-y: none;
 }
 
 .messages {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
     padding: 1.75rem var(--shell-padding) 1.1rem;
@@ -1494,6 +1499,8 @@ body[data-theme="sunset"] .thread-meta {
     scrollbar-gutter: stable;
     overscroll-behavior-y: contain;
     overscroll-behavior-x: none;
+    scroll-padding-top: 0.9rem;
+    scroll-padding-bottom: calc(6.4rem + env(safe-area-inset-bottom));
     -webkit-overflow-scrolling: touch;
 }
 
@@ -1859,6 +1866,10 @@ body[data-theme="sunset"] .thread-meta {
     border-top: 1px solid var(--border-subtle);
     backdrop-filter: blur(14px);
     box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.2);
+    position: sticky;
+    bottom: 0;
+    z-index: 70;
+    flex-shrink: 0;
 }
 
 .input-form {
@@ -2027,6 +2038,11 @@ textarea:focus-visible {
 }
 
 @media (max-width: 768px) {
+    .chat-app {
+        min-height: var(--app-height);
+        height: var(--app-height);
+    }
+
     .theme-toolbar-label {
         display: none;
     }
@@ -2068,6 +2084,7 @@ textarea:focus-visible {
     .messages {
         padding: 1.2rem 0.85rem 0.85rem;
         gap: 1rem;
+        scroll-padding-bottom: calc(var(--composer-height-mobile) + env(safe-area-inset-bottom));
     }
 
     .thread-item {

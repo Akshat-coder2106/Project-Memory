@@ -113,14 +113,15 @@ def _request_client_id() -> str:
     return _normalize_client_id(request.headers.get(_CLIENT_ID_HEADER))
 
 
-def _effective_client_id() -> str:
-    requested = _request_client_id()
-    session_client = _normalize_client_id(session.get("client_id"))
-    if requested != _DEFAULT_CLIENT_ID:
-        return requested
-    if session_client != _DEFAULT_CLIENT_ID:
-        return session_client
-    return _DEFAULT_CLIENT_ID
+def _user_client_id(user_id: int) -> str:
+    """Stable thread bucket per authenticated account (shared across devices)."""
+    return f"user_{int(user_id)}"
+
+
+def _effective_client_id(user_id: Optional[int] = None) -> str:
+    if user_id is not None:
+        return _user_client_id(user_id)
+    return _normalize_client_id(request.headers.get(_CLIENT_ID_HEADER))
 
 
 def _is_datetime_request(text: str) -> bool:
@@ -266,17 +267,32 @@ def _create_user(username: str, password: str) -> Tuple[Optional[int], Optional[
         conn.close()
 
 
-def _set_session_user(user_id: int, username: str, client_id: str):
+def _set_session_user(user_id: int, username: str):
+    user_client_id = _effective_client_id(user_id)
+    _coalesce_user_threads_to_user_bucket(user_id, user_client_id)
     session["user_id"] = user_id
     session["username"] = username
-    session["client_id"] = _normalize_client_id(client_id)
+    session["client_id"] = _normalize_client_id(user_client_id)
+
+
+def _coalesce_user_threads_to_user_bucket(user_id: int, user_client_id: str) -> None:
+    """Merge any per-device/default buckets into the account bucket."""
+    conn = _db_conn()
+    try:
+        conn.execute(
+            "UPDATE chat_threads SET device_id = ? WHERE user_id = ? AND device_id <> ?",
+            (user_client_id, user_id, user_client_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _current_user() -> Optional[Dict]:
     uid = session.get("user_id")
     uname = session.get("username")
-    client_id = _normalize_client_id(session.get("client_id"))
     if uid and uname:
+        client_id = _effective_client_id(uid)
         return {"id": uid, "username": uname, "client_id": client_id}
     return None
 
@@ -632,7 +648,7 @@ def _login_required(fn):
         user = _current_user()
         if not user:
             return _unauthorized()
-        client_id = _effective_client_id()
+        client_id = _effective_client_id(user["id"])
         if _normalize_client_id(session.get("client_id")) != client_id:
             session["client_id"] = client_id
         user["client_id"] = client_id
@@ -801,7 +817,7 @@ def register():
     user_id, create_err = _create_user(username, password)
     if create_err:
         return jsonify({"error": create_err}), 409
-    client_id = _effective_client_id()
+    client_id = _effective_client_id(user_id)
     default_thread = _create_thread(
         user_id,
         client_id,
@@ -809,7 +825,7 @@ def register():
         is_temporary=False,
     )
     _backfill_legacy_rows(user_id, default_thread["id"], client_id)
-    _set_session_user(user_id, username, client_id)
+    _set_session_user(user_id, username)
     return jsonify({
         "user": {"id": user_id, "username": username},
         "default_thread_id": default_thread["id"],
@@ -826,9 +842,9 @@ def login():
     row = _find_user_by_username(username)
     if not row or not check_password_hash(row["password_hash"], password):
         return jsonify({"error": "Invalid username or password."}), 401
-    client_id = _effective_client_id()
+    client_id = _effective_client_id(row["id"])
     default_thread_id = _ensure_default_thread(row["id"], client_id)
-    _set_session_user(row["id"], row["username"], client_id)
+    _set_session_user(row["id"], row["username"])
     return jsonify({
         "user": {"id": row["id"], "username": row["username"]},
         "default_thread_id": default_thread_id,
@@ -851,7 +867,7 @@ def auth_me():
     user = _current_user()
     if not user:
         return jsonify({"authenticated": False, "user": None})
-    client_id = _effective_client_id()
+    client_id = _effective_client_id(user["id"])
     session["client_id"] = client_id
     user["client_id"] = client_id
     default_thread_id = _ensure_default_thread(user["id"], client_id)
