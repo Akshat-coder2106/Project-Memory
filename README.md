@@ -62,11 +62,13 @@ If you create the service manually instead of Blueprint:
 ### Data Persistence Note
 
 By default the SQLite DB is local file storage and can reset after restart/redeploy on ephemeral instances.
-If you attach persistent storage, set:
+On Render, attach a persistent disk and set:
 
 ```bash
 MEMORY_DB_PATH=/var/data/memories.db
 ```
+
+Without a persistent disk, user accounts and chat history can be lost after redeploys/restarts.
 
 ## CLI (alternative)
 

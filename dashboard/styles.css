@@ -295,6 +295,10 @@ body[data-theme="white"] .theme-toolbar.is-open .theme-toggle-btn {
     border-color: rgba(11, 35, 74, 0.28);
 }
 
+.theme-swatch-black {
+    background: linear-gradient(145deg, #030405, #111523 52%, #05070d 100%);
+}
+
 .theme-swatch-sunset {
     background: linear-gradient(145deg, #281107, #ca4a15 55%, #66240f 100%);
 }
@@ -440,35 +444,37 @@ body[data-theme="white"] {
     --border-medium: rgba(11, 35, 74, 0.15);
     --border-strong: rgba(11, 35, 74, 0.22);
     background:
-        radial-gradient(1400px 760px at 50% -28%, rgba(154, 189, 255, 0.5), transparent 58%),
-        radial-gradient(880px 520px at 108% 10%, rgba(131, 170, 242, 0.28), transparent 64%),
-        radial-gradient(880px 520px at -8% 12%, rgba(170, 199, 252, 0.28), transparent 62%),
-        linear-gradient(180deg, #f4f8ff 0%, #edf3ff 40%, #f8fbff 100%);
+        radial-gradient(1260px 680px at 50% -28%, rgba(138, 170, 232, 0.18), transparent 58%),
+        radial-gradient(840px 480px at 108% 10%, rgba(122, 160, 230, 0.08), transparent 64%),
+        radial-gradient(840px 480px at -8% 12%, rgba(152, 185, 240, 0.08), transparent 62%),
+        linear-gradient(180deg, #f6f8fc 0%, #f1f4f9 42%, #f7f9fd 100%);
 }
 
 body[data-theme="white"]::before {
     background:
-        radial-gradient(1260px 700px at 50% -18%, rgba(184, 211, 255, 0.5), transparent 62%),
-        radial-gradient(760px 420px at 52% 112%, rgba(221, 232, 249, 0.72), transparent 70%);
+        radial-gradient(1120px 630px at 50% -18%, rgba(170, 198, 245, 0.22), transparent 62%),
+        radial-gradient(720px 400px at 52% 112%, rgba(217, 228, 245, 0.28), transparent 70%);
+    opacity: 0.16;
 }
 
 body[data-theme="white"]::after {
     background:
-        linear-gradient(rgba(24, 52, 94, 0.07) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(24, 52, 94, 0.05) 1px, transparent 1px);
-    opacity: 0.24;
+        linear-gradient(rgba(24, 52, 94, 0.028) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(24, 52, 94, 0.02) 1px, transparent 1px);
+    opacity: 0.08;
 }
 
 body[data-theme="white"] .ambient-gradient {
     background:
-        radial-gradient(circle at 16% 22%, rgba(91, 147, 244, 0.22), transparent 44%),
-        radial-gradient(circle at 84% 29%, rgba(110, 168, 255, 0.2), transparent 42%);
+        radial-gradient(circle at 16% 22%, rgba(91, 147, 244, 0.08), transparent 44%),
+        radial-gradient(circle at 84% 29%, rgba(110, 168, 255, 0.07), transparent 42%);
 }
 
 body[data-theme="white"] .theme-toggle-btn {
     border-color: rgba(11, 35, 74, 0.2);
-    background: linear-gradient(180deg, rgba(247, 251, 255, 0.96), rgba(239, 246, 255, 0.95));
+    background: linear-gradient(180deg, rgba(244, 249, 255, 0.95), rgba(236, 243, 255, 0.94));
     color: rgba(39, 62, 95, 0.9);
+    box-shadow: 0 6px 16px rgba(57, 89, 142, 0.12);
 }
 
 body[data-theme="white"] .theme-toggle-btn:hover {
@@ -478,7 +484,7 @@ body[data-theme="white"] .theme-toggle-btn:hover {
 
 body[data-theme="white"] .theme-popover {
     border-color: rgba(11, 35, 74, 0.18);
-    background: linear-gradient(180deg, rgba(247, 251, 255, 0.97), rgba(239, 246, 255, 0.96));
+    background: linear-gradient(180deg, rgba(245, 250, 255, 0.96), rgba(238, 245, 255, 0.95));
 }
 
 body[data-theme="white"] .theme-swatch.is-active {
@@ -491,27 +497,40 @@ body[data-theme="white"] .chat-app {
     border-bottom-color: rgba(11, 35, 74, 0.09);
     border-left-color: rgba(11, 35, 74, 0.08);
     border-right-color: rgba(11, 35, 74, 0.08);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 22px 56px rgba(44, 72, 122, 0.16);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 10px 22px rgba(44, 72, 122, 0.08);
     background:
-        radial-gradient(120% 90% at 50% -20%, rgba(127, 172, 255, 0.2), transparent 58%),
-        linear-gradient(180deg, rgba(244, 249, 255, 0.96) 0%, rgba(236, 243, 255, 0.97) 56%, rgba(241, 247, 255, 0.99) 100%);
+        radial-gradient(120% 90% at 50% -20%, rgba(127, 172, 255, 0.08), transparent 58%),
+        linear-gradient(180deg, rgba(245, 248, 253, 0.96) 0%, rgba(239, 244, 250, 0.97) 56%, rgba(244, 247, 252, 0.99) 100%);
+}
+
+body[data-theme="white"] .chat-app::before {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent 24%),
+        radial-gradient(150% 88% at 50% -20%, rgba(140, 179, 240, 0.05), transparent 54%);
+    opacity: 0.2;
+}
+
+body[data-theme="white"] .chat-app::after {
+    background:
+        radial-gradient(560px 280px at 50% 104%, rgba(130, 155, 194, 0.14), transparent 80%);
+    opacity: 0.24;
 }
 
 body[data-theme="white"] .chat-sidebar {
     border-right-color: rgba(11, 35, 74, 0.12);
     background:
-        linear-gradient(180deg, rgba(241, 247, 255, 0.96), rgba(235, 242, 255, 0.98)),
-        radial-gradient(100% 70% at 0% 0%, rgba(92, 145, 236, 0.12), transparent 68%);
+        linear-gradient(180deg, rgba(241, 245, 252, 0.96), rgba(236, 241, 249, 0.98)),
+        radial-gradient(100% 70% at 0% 0%, rgba(92, 145, 236, 0.07), transparent 68%);
 }
 
 body[data-theme="white"] .chat-sidebar::before {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.65), transparent 20%);
-    opacity: 0.42;
+    opacity: 0.2;
 }
 
 body[data-theme="white"] .chat-header {
-    background: linear-gradient(180deg, rgba(243, 249, 255, 0.96), rgba(236, 243, 255, 0.84));
-    box-shadow: 0 8px 24px rgba(57, 89, 142, 0.12);
+    background: linear-gradient(180deg, rgba(243, 247, 252, 0.9), rgba(238, 243, 250, 0.78));
+    box-shadow: 0 2px 8px rgba(57, 89, 142, 0.06);
 }
 
 body[data-theme="white"] .status-indicator,
@@ -530,8 +549,9 @@ body[data-theme="white"] .auth-card {
 
 body[data-theme="white"] .sidebar-icon-btn {
     border-color: rgba(11, 35, 74, 0.2);
-    background: linear-gradient(180deg, rgba(251, 253, 255, 0.96), rgba(241, 247, 255, 0.97));
+    background: linear-gradient(180deg, rgba(247, 251, 255, 0.95), rgba(238, 245, 255, 0.95));
     color: rgba(39, 62, 95, 0.88);
+    box-shadow: 0 4px 12px rgba(57, 89, 142, 0.1);
 }
 
 body[data-theme="white"] .sidebar-icon-btn:hover {
@@ -552,7 +572,7 @@ body[data-theme="white"] .sidebar-action {
 
 body[data-theme="white"] .sidebar-action:hover {
     border-color: rgba(56, 102, 186, 0.46);
-    box-shadow: 0 8px 16px rgba(57, 89, 142, 0.16);
+    box-shadow: 0 5px 12px rgba(57, 89, 142, 0.12);
 }
 
 body[data-theme="white"] .sidebar-action-new {
@@ -585,12 +605,12 @@ body[data-theme="white"] .thread-empty {
 body[data-theme="white"] .thread-item {
     border-color: rgba(11, 35, 74, 0.16);
     background: linear-gradient(180deg, rgba(252, 254, 255, 0.97), rgba(245, 250, 255, 0.98));
-    box-shadow: 0 4px 12px rgba(57, 89, 142, 0.12);
+    box-shadow: 0 2px 8px rgba(57, 89, 142, 0.08);
 }
 
 body[data-theme="white"] .thread-item:hover {
     border-color: rgba(56, 102, 186, 0.46);
-    box-shadow: 0 7px 16px rgba(57, 89, 142, 0.18);
+    box-shadow: 0 4px 10px rgba(57, 89, 142, 0.12);
 }
 
 body[data-theme="white"] .thread-item.active {
@@ -623,7 +643,7 @@ body[data-theme="white"] .thread-more-btn:hover {
 body[data-theme="white"] .thread-menu {
     border-color: rgba(11, 35, 74, 0.18);
     background: linear-gradient(180deg, rgba(252, 254, 255, 0.98), rgba(245, 250, 255, 0.99));
-    box-shadow: 0 10px 22px rgba(57, 89, 142, 0.2);
+    box-shadow: 0 6px 14px rgba(57, 89, 142, 0.14);
 }
 
 body[data-theme="white"] .thread-menu-item {
@@ -636,17 +656,21 @@ body[data-theme="white"] .thread-menu-item:hover {
 }
 
 body[data-theme="white"] .input-area {
-    background: linear-gradient(180deg, rgba(233, 241, 255, 0.2), rgba(233, 241, 255, 0.9) 30%, rgba(233, 241, 255, 1) 100%);
+    border-top-color: rgba(22, 46, 86, 0.12);
+    background: linear-gradient(180deg, rgba(236, 242, 250, 0.12), rgba(236, 242, 250, 0.68) 30%, rgba(236, 242, 250, 0.9) 100%);
+    box-shadow: 0 -4px 12px rgba(80, 100, 132, 0.08);
 }
 
 body[data-theme="white"] .input-form {
     border-color: rgba(11, 35, 74, 0.18);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(246, 250, 255, 0.98));
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 251, 255, 0.98));
+    box-shadow: 0 1px 3px rgba(70, 92, 128, 0.12);
 }
 
 body[data-theme="white"] .input-form:focus-within {
-    border-color: rgba(10, 132, 255, 0.5);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(248, 252, 255, 1));
+    border-color: rgba(38, 95, 186, 0.52);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(249, 252, 255, 1));
+    box-shadow: 0 0 0 3px rgba(52, 110, 202, 0.12), 0 3px 10px rgba(70, 92, 128, 0.12);
 }
 
 body[data-theme="white"] .auth-input {
@@ -657,7 +681,7 @@ body[data-theme="white"] .auth-input {
 body[data-theme="white"] .message.assistant .message-content {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 251, 255, 0.98));
     border-color: rgba(11, 35, 74, 0.14);
-    box-shadow: 0 4px 12px rgba(44, 72, 122, 0.14);
+    box-shadow: 0 2px 8px rgba(44, 72, 122, 0.1);
 }
 
 body[data-theme="white"] .message.assistant .message-content::before {
@@ -666,6 +690,97 @@ body[data-theme="white"] .message.assistant .message-content::before {
 
 body[data-theme="white"] .message-meta {
     color: rgba(42, 61, 88, 0.7);
+}
+
+/* Theme: Black */
+body[data-theme="black"] {
+    --bg-deep: #050507;
+    --bg-surface: #0a0c10;
+    --bg-elevated: #10131a;
+    --bg-input: #151923;
+    --bg-panel: rgba(12, 15, 21, 0.86);
+    --text-primary: #f5f7fb;
+    --text-secondary: #b6bfce;
+    --text-tertiary: #7f8a9c;
+    --text-placeholder: #677286;
+    --accent-glow: rgba(10, 132, 255, 0.14);
+    --accent-glow-strong: rgba(10, 132, 255, 0.28);
+    --assistant-bg: rgba(255, 255, 255, 0.03);
+    --assistant-border: rgba(255, 255, 255, 0.08);
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --border-medium: rgba(255, 255, 255, 0.11);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    background:
+        radial-gradient(1450px 760px at 50% -24%, rgba(84, 136, 230, 0.14), transparent 58%),
+        radial-gradient(900px 500px at 108% 10%, rgba(54, 90, 165, 0.12), transparent 64%),
+        radial-gradient(840px 500px at -8% 12%, rgba(43, 67, 117, 0.1), transparent 62%),
+        linear-gradient(180deg, #040507 0%, #07090d 40%, #040507 100%);
+}
+
+body[data-theme="black"]::before {
+    background:
+        radial-gradient(1240px 690px at 50% -20%, rgba(104, 156, 255, 0.14), transparent 62%),
+        radial-gradient(760px 420px at 52% 112%, rgba(9, 13, 21, 0.72), transparent 70%);
+}
+
+body[data-theme="black"]::after {
+    background:
+        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+    opacity: 0.09;
+}
+
+body[data-theme="black"] .ambient-gradient {
+    background:
+        radial-gradient(circle at 16% 22%, rgba(71, 122, 222, 0.18), transparent 44%),
+        radial-gradient(circle at 84% 29%, rgba(52, 92, 173, 0.16), transparent 42%);
+}
+
+body[data-theme="black"] .chat-app {
+    border-top-color: rgba(255, 255, 255, 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+    border-left-color: rgba(255, 255, 255, 0.05);
+    border-right-color: rgba(255, 255, 255, 0.05);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 26px 72px rgba(0, 0, 0, 0.5);
+    background:
+        radial-gradient(120% 88% at 50% -20%, rgba(99, 147, 244, 0.1), transparent 58%),
+        linear-gradient(180deg, rgba(10, 12, 17, 0.95) 0%, rgba(7, 9, 14, 0.97) 56%, rgba(5, 7, 11, 0.99) 100%);
+}
+
+body[data-theme="black"] .chat-sidebar {
+    border-right-color: rgba(255, 255, 255, 0.1);
+    background:
+        linear-gradient(180deg, rgba(12, 15, 22, 0.97), rgba(8, 11, 18, 0.99)),
+        radial-gradient(100% 70% at 0% 0%, rgba(84, 136, 230, 0.11), transparent 68%);
+}
+
+body[data-theme="black"] .chat-sidebar::before {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 20%);
+    opacity: 0.2;
+}
+
+body[data-theme="black"] .chat-header {
+    background: linear-gradient(180deg, rgba(12, 15, 23, 0.94), rgba(10, 12, 19, 0.78));
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+}
+
+body[data-theme="black"] .theme-toggle-btn,
+body[data-theme="black"] .sidebar-icon-btn {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: linear-gradient(180deg, rgba(18, 22, 33, 0.9), rgba(12, 15, 24, 0.94));
+    color: rgba(202, 215, 236, 0.92);
+}
+
+body[data-theme="black"] .theme-popover {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: linear-gradient(180deg, rgba(16, 20, 31, 0.9), rgba(10, 14, 24, 0.94));
+}
+
+body[data-theme="black"] .status-indicator,
+body[data-theme="black"] .user-pill,
+body[data-theme="black"] .logout-btn {
+    border-color: rgba(255, 255, 255, 0.14);
+    background: linear-gradient(180deg, rgba(18, 22, 32, 0.9), rgba(12, 16, 24, 0.92));
 }
 
 /* Theme: Sunset */

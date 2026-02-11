@@ -11,7 +11,18 @@ from typing import Optional
 # Resolve DB path relative to project root
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 _db_env_path = (os.environ.get("MEMORY_DB_PATH") or "").strip()
-DEFAULT_DB_PATH = Path(_db_env_path).expanduser() if _db_env_path else (PROJECT_ROOT / "data" / "memories.db")
+_running_on_render = bool(
+    (os.environ.get("RENDER") or "").strip()
+    or (os.environ.get("RENDER_SERVICE_ID") or "").strip()
+    or (os.environ.get("RENDER_SERVICE_NAME") or "").strip()
+)
+if _db_env_path:
+    DEFAULT_DB_PATH = Path(_db_env_path).expanduser()
+elif _running_on_render:
+    # Render persistent disks are mounted at /var/data.
+    DEFAULT_DB_PATH = Path("/var/data/memories.db")
+else:
+    DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "memories.db"
 
 
 @dataclass

@@ -5,12 +5,14 @@
 const API_BASE = "";
 const MOBILE_BREAKPOINT = 1024;
 const THEME_STORAGE_KEY = "memory_theme_v1";
-const AVAILABLE_THEMES = ["default", "gpt", "project", "white", "sunset"];
+const LAST_USERNAME_STORAGE_KEY = "memory_last_username_v1";
+const AVAILABLE_THEMES = ["default", "gpt", "project", "white", "black", "sunset"];
 const THEME_META_COLORS = {
   default: "#060910",
   gpt: "#050b09",
   project: "#050919",
   white: "#f4f8ff",
+  black: "#040507",
   sunset: "#13090a",
 };
 
@@ -91,6 +93,33 @@ function loadSavedTheme() {
   } catch (_) {
     return "default";
   }
+}
+
+function loadSavedUsername() {
+  try {
+    return String(localStorage.getItem(LAST_USERNAME_STORAGE_KEY) || "").trim();
+  } catch (_) {
+    return "";
+  }
+}
+
+function saveLastUsername(username) {
+  const value = String(username || "").trim();
+  if (!value) return;
+  try {
+    localStorage.setItem(LAST_USERNAME_STORAGE_KEY, value);
+  } catch (_) {
+    // Ignore storage write failures.
+  }
+}
+
+function hydrateUsernameInputs() {
+  const saved = loadSavedUsername();
+  if (!saved) return;
+  const signInInput = document.getElementById("signin-username");
+  const signUpInput = document.getElementById("signup-username");
+  if (signInInput && !signInInput.value.trim()) signInInput.value = saved;
+  if (signUpInput && !signUpInput.value.trim()) signUpInput.value = saved;
 }
 
 function paintThemeSelection(theme) {
@@ -898,6 +927,7 @@ async function loginWithCredentials(username, password) {
     method: "POST",
     body: JSON.stringify({ username, password }),
   });
+  saveLastUsername(username);
   state.user = data.user;
   setUserUI(data.user);
   clearAuthMessages();
@@ -910,6 +940,7 @@ async function registerWithCredentials(username, password) {
     method: "POST",
     body: JSON.stringify({ username, password }),
   });
+  saveLastUsername(username);
   state.user = data.user;
   setUserUI(data.user);
   clearAuthMessages();
@@ -1116,6 +1147,7 @@ function init() {
   const signUpBack = document.getElementById("signup-back");
   const signInForm = document.getElementById("signin-form");
   const signUpForm = document.getElementById("signup-form");
+  hydrateUsernameInputs();
 
   form.addEventListener("submit", handleSubmit);
   input.addEventListener("input", handleInput);

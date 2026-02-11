@@ -51,6 +51,7 @@ app.config["SECRET_KEY"] = (
 )
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
 # Path to dashboard (served as static files)
 DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "dashboard"
@@ -270,6 +271,7 @@ def _create_user(username: str, password: str) -> Tuple[Optional[int], Optional[
 def _set_session_user(user_id: int, username: str):
     user_client_id = _effective_client_id(user_id)
     _coalesce_user_threads_to_user_bucket(user_id, user_client_id)
+    session.permanent = True
     session["user_id"] = user_id
     session["username"] = username
     session["client_id"] = _normalize_client_id(user_client_id)
@@ -1033,6 +1035,7 @@ def health(user):
         "fallback_count": _fallback_count,
         "last_api_success": _last_api_success,
         "thread_id": thread_id,
+        "db_path": str(DEFAULT_DB_PATH),
     })
 
 

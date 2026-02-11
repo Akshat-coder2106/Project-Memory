@@ -16,3 +16,5 @@ services:
         value: openai/gpt-4o-mini
       - key: AI_SAVE_QUOTA
         value: "0"
+      - key: MEMORY_DB_PATH
+        value: /var/data/memories.db
