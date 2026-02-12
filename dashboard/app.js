@@ -661,11 +661,30 @@ async function shareThread(threadId) {
     }
   }
   try {
-    await navigator.clipboard.writeText(shareUrl);
+    await copyToClipboard(shareUrl);
     showNotification("Chat link copied", "info");
   } catch (_) {
     showNotification("Could not copy chat link", "error");
   }
+}
+
+async function copyToClipboard(text) {
+  const value = String(text ?? "");
+  if (!value) return;
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const ta = document.createElement("textarea");
+  ta.value = value;
+  ta.setAttribute("readonly", "true");
+  ta.style.position = "absolute";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand("copy");
+  ta.remove();
+  if (!ok) throw new Error("copy_failed");
 }
 
 async function api(path, options = {}) {
@@ -751,38 +770,6 @@ function formatMessageTime(ts) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-async function copyTextToClipboard(text) {
-  const value = String(text || "");
-  if (!value) return false;
-
-  if (navigator.clipboard && window.isSecureContext) {
-    try {
-      await navigator.clipboard.writeText(value);
-      return true;
-    } catch (_) {
-      // Fallback to execCommand path below.
-    }
-  }
-
-  try {
-    const textArea = document.createElement("textarea");
-    textArea.value = value;
-    textArea.setAttribute("readonly", "");
-    textArea.style.position = "fixed";
-    textArea.style.opacity = "0";
-    textArea.style.pointerEvents = "none";
-    textArea.style.left = "-9999px";
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-    const copied = document.execCommand("copy");
-    textArea.remove();
-    return !!copied;
-  } catch (_) {
-    return false;
-  }
-}
-
 function createMessageElement(role, content, createdAt, opts = {}) {
   const message = document.createElement("div");
   message.className = `message ${role}${opts.loading ? " loading" : ""}`;
@@ -792,27 +779,17 @@ function createMessageElement(role, content, createdAt, opts = {}) {
     message.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-body"><div class="message-content"><span class="typing-indicator" aria-label="Assistant is thinking"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></span></div></div>`;
     return message;
   }
+  const actionRow =
+    role === "user"
+      ? `<div class="message-meta-row"><div class="message-meta">${timeText}</div><button type="button" class="message-copy-btn" aria-label="Copy your message">Copy</button></div>`
+      : `<div class="message-meta">${timeText}</div>`;
   message.innerHTML = `
     <div class="message-avatar">${avatar}</div>
     <div class="message-body">
       <div class="message-content">${escapeHtml(content || "")}</div>
-      <div class="message-actions">
-        <button type="button" class="message-copy-btn" aria-label="Copy message">Copy</button>
-      </div>
-      <div class="message-meta">${timeText}</div>
+      ${actionRow}
     </div>
   `;
-  const copyBtn = message.querySelector(".message-copy-btn");
-  if (copyBtn) {
-    copyBtn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const contentEl = message.querySelector(".message-content");
-      const raw = contentEl ? contentEl.innerText : "";
-      const copied = await copyTextToClipboard((raw || "").trim());
-      showNotification(copied ? "Copied" : "Copy failed", copied ? "info" : "error");
-    });
-  }
   return message;
 }
 
@@ -860,6 +837,45 @@ function triggerRipple(event, element) {
   ripple.style.top = `${event.clientY - rect.top - size / 2}px`;
   element.appendChild(ripple);
   setTimeout(() => ripple.remove(), 520);
+}
+
+function supports3DEffects() {
+  return (
+    window.matchMedia("(hover: hover) and (pointer: fine)").matches &&
+    !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+function bind3DTilt(target) {
+  if (!target || target.dataset.tiltBound === "1") return;
+  target.dataset.tiltBound = "1";
+
+  target.addEventListener("pointermove", (event) => {
+    if (!supports3DEffects()) return;
+    const rect = target.getBoundingClientRect();
+    const px = (event.clientX - rect.left) / rect.width;
+    const py = (event.clientY - rect.top) / rect.height;
+    const rx = (0.5 - py) * 7.5;
+    const ry = (px - 0.5) * 9;
+    target.style.setProperty("--tilt-rx", `${rx.toFixed(2)}deg`);
+    target.style.setProperty("--tilt-ry", `${ry.toFixed(2)}deg`);
+  });
+
+  target.addEventListener("pointerenter", () => {
+    if (!supports3DEffects()) return;
+    target.classList.add("is-tilting");
+  });
+
+  target.addEventListener("pointerleave", () => {
+    target.classList.remove("is-tilting");
+    target.style.setProperty("--tilt-rx", "0deg");
+    target.style.setProperty("--tilt-ry", "0deg");
+  });
+}
+
+function refresh3DTargets() {
+  if (!supports3DEffects()) return;
+  document.querySelectorAll(".thread-item, .welcome-card, .welcome-badge").forEach(bind3DTilt);
 }
 
 function clearAuthMessages() {
@@ -1062,6 +1078,7 @@ function renderMessages(messages, options = {}) {
       </div>
     `;
   }
+  refresh3DTargets();
   updateHeaderThreadUI();
   if (suspendDuringRender) {
     requestAnimationFrame(() => {
@@ -1135,6 +1152,7 @@ function renderThreadList() {
       `;
     })
     .join("");
+  refresh3DTargets();
 }
 
 async function loadThreads(options = {}) {
@@ -1774,6 +1792,29 @@ function initThreadInteractions() {
   });
 }
 
+function initMessageActions() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+  container.addEventListener("click", async (e) => {
+    const copyBtn = e.target.closest(".message-copy-btn");
+    if (!copyBtn) return;
+    const message = copyBtn.closest(".message.user");
+    const content = message ? message.querySelector(".message-content") : null;
+    const text = content ? content.textContent || "" : "";
+    if (!text.trim()) return;
+    try {
+      await copyToClipboard(text);
+      copyBtn.textContent = "Copied";
+      showNotification("Message copied", "info");
+      setTimeout(() => {
+        copyBtn.textContent = "Copy";
+      }, 1100);
+    } catch (_) {
+      showNotification("Could not copy message", "error");
+    }
+  });
+}
+
 function init() {
   updateViewportHeightVar();
   closeDeleteAccountModal();
@@ -1865,6 +1906,8 @@ function init() {
   signUpForm.addEventListener("submit", handleSignUpSubmit);
 
   initThreadInteractions();
+  initMessageActions();
+  refresh3DTargets();
   bootstrapAuthState();
 }
 
