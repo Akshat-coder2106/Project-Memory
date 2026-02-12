@@ -17,11 +17,23 @@
         <div class="auth-card">
             <div class="auth-view" id="auth-view-choice">
                 <div class="auth-badge">Memory Access</div>
-                <p class="auth-subtitle">Choose how you want to access your memory ID.</p>
+                <h1 class="auth-title auth-choice-title">Welcome to Memory</h1>
+                <p class="auth-subtitle">Choose how you want to access your memory ID and continue with your saved context.</p>
+                <div class="auth-choice-highlights" aria-label="Product highlights">
+                    <div class="auth-choice-chip">
+                        <span class="auth-choice-chip-title">Persistent Recall</span>
+                        <span class="auth-choice-chip-sub">Your key facts stay available across chats.</span>
+                    </div>
+                    <div class="auth-choice-chip">
+                        <span class="auth-choice-chip-title">Fast Workspace</span>
+                        <span class="auth-choice-chip-sub">Low-latency retrieval with smart chat titles.</span>
+                    </div>
+                </div>
                 <div class="auth-choice-actions">
                     <button type="button" class="auth-button auth-button-primary" id="go-signin">Sign In</button>
                     <button type="button" class="auth-button" id="go-signup">Sign Up</button>
                 </div>
+                <p class="auth-choice-foot">New here? Create an account in under 30 seconds.</p>
                 <p class="auth-message" id="auth-choice-message"></p>
             </div>
 
@@ -111,6 +123,12 @@
                         <span class="status-text">Active</span>
                     </div>
                     <div class="user-pill" id="user-pill">@user</div>
+                    <button class="header-icon-btn" id="cooler-settings-btn" type="button" aria-label="Open cooler settings" aria-expanded="false" aria-controls="cooler-settings-drawer">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.7 1.7 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.07V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.25l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.07-.4H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.25-1.9l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.07V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.9-.25l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.35.17.72.26 1.11.25H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"></path>
+                        </svg>
+                    </button>
                     <div class="theme-toolbar" id="theme-toolbar" aria-label="Background style picker">
                         <button
                             type="button"
@@ -135,6 +153,8 @@
                                 <button type="button" role="radio" aria-checked="false" class="theme-swatch theme-swatch-gpt" data-theme="gpt" title="GPT" aria-label="GPT style background"></button>
                                 <button type="button" role="radio" aria-checked="false" class="theme-swatch theme-swatch-project" data-theme="project" title="Project" aria-label="Project style background"></button>
                                 <button type="button" role="radio" aria-checked="false" class="theme-swatch theme-swatch-white" data-theme="white" title="White" aria-label="White background"></button>
+                                <button type="button" role="radio" aria-checked="false" class="theme-swatch theme-swatch-mist" data-theme="mist" title="Mist" aria-label="Mist light background"></button>
+                                <button type="button" role="radio" aria-checked="false" class="theme-swatch theme-swatch-dawn" data-theme="dawn" title="Dawn" aria-label="Dawn light background"></button>
                                 <button type="button" role="radio" aria-checked="false" class="theme-swatch theme-swatch-black" data-theme="black" title="Black" aria-label="Black background"></button>
                                 <button type="button" role="radio" aria-checked="false" class="theme-swatch theme-swatch-sunset" data-theme="sunset" title="Sunset" aria-label="Sunset background"></button>
                             </div>
@@ -186,6 +206,7 @@
                             </label>
                         </div>
                     </div>
+                    <button class="account-danger-btn" id="open-delete-account-btn" type="button" aria-label="Open account deletion warning">Delete account</button>
                     <button class="logout-btn" id="logout-btn" type="button">Logout</button>
                 </div>
             </header>
@@ -202,6 +223,20 @@
                         </div>
                         <h1 class="welcome-title">Memory Workspace</h1>
                         <p class="welcome-sub" id="welcome-sub">Start a conversation and your important context will be carried forward.</p>
+                        <div class="welcome-highlights" aria-label="Workspace highlights">
+                            <div class="welcome-card">
+                                <span class="welcome-card-title">Partitioned Memory</span>
+                                <span class="welcome-card-sub">User, thread, and category aware retrieval.</span>
+                            </div>
+                            <div class="welcome-card">
+                                <span class="welcome-card-title">Smart Titles</span>
+                                <span class="welcome-card-sub">Chats auto-name from meaningful user intent.</span>
+                            </div>
+                            <div class="welcome-card">
+                                <span class="welcome-card-title">Low-Latency Recall</span>
+                                <span class="welcome-card-sub">Fast context injection with ranked top-k memory.</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <button class="scroll-bottom-btn is-hidden" id="scroll-bottom-btn" type="button" aria-label="Scroll to latest">
@@ -230,6 +265,82 @@
                     </form>
                 </div>
             </main>
+        </div>
+    </div>
+
+    <aside class="cooler-settings-drawer" id="cooler-settings-drawer" aria-hidden="true" aria-label="Cooler settings panel">
+        <div class="cooler-settings-head">
+            <h2>Cooler Settings</h2>
+            <button type="button" class="cooler-close-btn" id="cooler-close-btn" aria-label="Close cooler settings">×</button>
+        </div>
+        <div class="cooler-setting-row">
+            <div>
+                <div class="cooler-setting-title">Cooler Mode</div>
+                <div class="cooler-setting-sub">Boost glow, depth, and visual richness.</div>
+            </div>
+            <button type="button" class="cooler-switch" id="cooler-mode-toggle" role="switch" aria-checked="false" aria-label="Toggle cooler mode">
+                <span class="cooler-switch-knob"></span>
+            </button>
+        </div>
+
+        <div class="cooler-setting-block">
+            <div class="cooler-setting-title">Theme Intensity</div>
+            <div class="cooler-segmented" id="cooler-intensity-group" role="radiogroup" aria-label="Theme intensity">
+                <button type="button" class="cooler-segment is-active" data-intensity="subtle" role="radio" aria-checked="true">Subtle</button>
+                <button type="button" class="cooler-segment" data-intensity="balanced" role="radio" aria-checked="false">Balanced</button>
+                <button type="button" class="cooler-segment" data-intensity="vivid" role="radio" aria-checked="false">Vivid</button>
+            </div>
+        </div>
+
+        <div class="cooler-setting-block">
+            <div class="cooler-setting-title">Live Preview</div>
+            <div class="cooler-live-preview">
+                <div class="cooler-preview-badge">Memory</div>
+                <div class="cooler-preview-line"></div>
+                <div class="cooler-preview-line short"></div>
+            </div>
+        </div>
+
+        <div class="cooler-actions">
+            <button type="button" class="cooler-btn primary" id="cooler-save-btn">Save Theme</button>
+            <button type="button" class="cooler-btn" id="cooler-reset-btn">Reset Default</button>
+            <button type="button" class="cooler-btn" id="cooler-share-btn">Copy Share Link</button>
+        </div>
+
+        <div class="cooler-danger-zone">
+            <div class="cooler-setting-title">Danger Zone</div>
+            <div class="cooler-setting-sub">Delete your account and permanently remove all chats and memories.</div>
+            <button type="button" class="cooler-btn cooler-btn-danger" id="drawer-delete-account-btn">Delete Account</button>
+        </div>
+    </aside>
+    <button class="cooler-overlay" id="cooler-overlay" type="button" aria-label="Close settings"></button>
+
+    <div class="danger-modal-overlay" id="delete-account-overlay" hidden>
+        <div class="danger-modal" role="dialog" aria-modal="true" aria-labelledby="delete-account-title" aria-describedby="delete-account-desc">
+            <h2 id="delete-account-title">Delete account</h2>
+            <p id="delete-account-desc">
+                This action is permanent. Your account, all chats, and all stored memories will be deleted and cannot be recovered.
+            </p>
+            <ul class="danger-points">
+                <li>This cannot be undone.</li>
+                <li>All thread history will be erased.</li>
+                <li>All memory entries will be erased.</li>
+            </ul>
+            <label class="danger-field" for="delete-account-confirm-input">
+                Type <strong>DELETE</strong> to confirm
+            </label>
+            <input id="delete-account-confirm-input" class="danger-input" type="text" autocomplete="off" spellcheck="false" />
+            <label class="danger-field" for="delete-account-password-input">Enter your password</label>
+            <input id="delete-account-password-input" class="danger-input" type="password" autocomplete="current-password" />
+            <label class="danger-consent">
+                <input id="delete-account-consent-input" type="checkbox" />
+                <span>I understand this action cannot be undone.</span>
+            </label>
+            <p class="danger-error" id="delete-account-error"></p>
+            <div class="danger-actions">
+                <button type="button" class="danger-cancel-btn" id="delete-account-cancel-btn">Cancel</button>
+                <button type="button" class="danger-delete-btn" id="delete-account-confirm-btn" disabled>Delete permanently</button>
+            </div>
         </div>
     </div>
 

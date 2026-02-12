@@ -60,7 +60,8 @@ SYSTEM_INSTRUCTION = """You are a helpful conversational assistant with long-ter
 Use the provided "Relevant memories" to personalize your responses. Be concise and natural.
 If memories conflict with what the user just said, prioritize the most recent conversation.
 If "Live web results" are provided, use them for current/latest info and avoid outdated claims.
-If the user asks for current data and no live results are provided, clearly say live data is unavailable."""
+If the user asks for current data and no live results are provided, clearly say live data is unavailable.
+Use plain text only. Do not use LaTeX, equation markup, or markdown math blocks."""
 
 # Session state: short-term buffer per authenticated thread (user_id, thread_id)
 _user_buffers: dict[tuple[int, int], ShortTermBuffer] = {}
@@ -69,6 +70,20 @@ _fallback_count = 0
 _DEFAULT_CLIENT_ID = "default"
 _CLIENT_ID_HEADER = "X-Client-ID"
 _CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$")
+_GENERIC_THREAD_TITLES = {
+    "new chat",
+    "new conversation",
+    "chat",
+    "conversation",
+    "hello",
+    "hi",
+    "hey",
+    "start",
+}
+_NON_INFORMATIVE_TITLE_RE = re.compile(
+    r"^(hi|hello|hey|yo|ok|okay|thanks|thank you|test|new chat|chat)\W*$",
+    re.IGNORECASE,
+)
 
 
 _DATETIME_QUERY_RE = re.compile(
@@ -77,6 +92,14 @@ _DATETIME_QUERY_RE = re.compile(
     r"what\s+day\s+is\s+it|which\s+day\s+is\s+it|"
     r"date\s+and\s+time|current\s+date\s+and\s+time|"
     r"tomorrow'?s?\s+date|tommorow'?s?\s+date|yesterday'?s?\s+date)",
+    re.IGNORECASE,
+)
+_PERCENTAGE_INTENT_RE = re.compile(
+    r"(percent|percentage|calculate\s+my\s+percentage|marks?\s+out\s+of)",
+    re.IGNORECASE,
+)
+_OUT_OF_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(?:out\s+of|/)\s*(\d+(?:\.\d+)?)",
     re.IGNORECASE,
 )
 
@@ -229,6 +252,62 @@ def _current_datetime_reply(user_message: str) -> str:
     return f"{_days_phrase(abs(offset))} ago, it was {time_part} {tz_part} on {date_part}."
 
 
+def _clean_math_markup(text: str) -> str:
+    value = str(text or "")
+    if not value.strip():
+        return value
+
+    value = value.replace("\r\n", "\n")
+    value = re.sub(r"```(?:\w+)?\n?", "", value)
+    value = value.replace("```", "")
+
+    # Convert common LaTeX math wrappers.
+    value = re.sub(r"\\\[(.*?)\\\]", r"\1", value, flags=re.DOTALL)
+    value = re.sub(r"\\\((.*?)\\\)", r"\1", value, flags=re.DOTALL)
+    value = re.sub(r"\\text\{([^}]*)\}", r"\1", value)
+    value = re.sub(r"\\left|\\right", "", value)
+    value = re.sub(r"\\times", " x ", value)
+    value = re.sub(r"\\cdot", " * ", value)
+
+    # Convert \frac{a}{b} -> (a/b)
+    while True:
+        updated = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"(\1/\2)", value)
+        if updated == value:
+            break
+        value = updated
+
+    value = value.replace("\\n", "\n")
+    value = re.sub(r"\\\\", "\n", value)
+    value = re.sub(r"\\([A-Za-z]+)", r"\1", value)
+    value = re.sub(r"\n{3,}", "\n\n", value)
+    value = re.sub(r"[ \t]{2,}", " ", value)
+    return value.strip()
+
+
+def _format_percent(value: float) -> str:
+    text = f"{value:.2f}"
+    text = text.rstrip("0").rstrip(".")
+    return text
+
+
+def _percentage_reply(user_message: str) -> Optional[str]:
+    text = (user_message or "").strip()
+    if not text or not _PERCENTAGE_INTENT_RE.search(text):
+        return None
+    m = _OUT_OF_RE.search(text)
+    if not m:
+        return None
+    obtained = float(m.group(1))
+    total = float(m.group(2))
+    if total == 0:
+        return "I can't calculate a percentage when total marks are 0."
+    pct = (obtained / total) * 100.0
+    return (
+        f"Your percentage is {_format_percent(pct)}%.\n"
+        f"Calculation: ({_format_percent(obtained)}/{_format_percent(total)}) x 100"
+    )
+
+
 def _validate_auth_payload(data: dict) -> Tuple[str, str, Optional[str]]:
     username = (data.get("username") or "").strip()
     password = (data.get("password") or "").strip()
@@ -248,6 +327,16 @@ def _find_user_by_username(username: str):
     row = conn.execute(
         "SELECT id, username, password_hash FROM users WHERE username = ?",
         (username,),
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def _find_user_by_id(user_id: int):
+    conn = _db_conn()
+    row = conn.execute(
+        "SELECT id, username, password_hash FROM users WHERE id = ?",
+        (user_id,),
     ).fetchone()
     conn.close()
     return row
@@ -308,21 +397,46 @@ def _sanitize_thread_title(title: str) -> str:
 
 def _title_from_first_message(message: str) -> str:
     text = re.sub(r"\s+", " ", (message or "").strip())
+    text = re.sub(r"^[\"'`#\-\s]+", "", text)
+    text = re.sub(r"[\s\"'`]+$", "", text)
     if not text:
         return "New chat"
-    if len(text) <= 54:
+    if _NON_INFORMATIVE_TITLE_RE.fullmatch(text):
+        return "New chat"
+    if len(text) <= 42:
         return text
-    return text[:51].rstrip() + "..."
+    return text[:39].rstrip() + "..."
+
+
+def _is_generic_thread_title(title: Optional[str]) -> bool:
+    normalized = re.sub(r"\s+", " ", (title or "").strip()).lower()
+    return (not normalized) or (normalized in _GENERIC_THREAD_TITLES)
+
+
+def _should_replace_thread_title(current_title: Optional[str], suggested_title: str) -> bool:
+    if suggested_title == "New chat":
+        return False
+    return _is_generic_thread_title(current_title)
 
 
 def _row_to_thread_payload(row: sqlite3.Row) -> dict:
+    last_message = row["last_message"] or ""
+    last_user_message = row["last_user_message"] or ""
+    title = row["title"]
+    # UI fallback: if stored title is generic and the latest user message is informative,
+    # present a better title immediately (never use assistant replies as title).
+    if _is_generic_thread_title(title):
+        hint = _title_from_first_message(last_user_message)
+        if hint != "New chat":
+            title = hint
     return {
         "id": row["id"],
-        "title": row["title"],
+        "title": title,
         "is_temporary": bool(row["is_temporary"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
-        "last_message": row["last_message"] or "",
+        "last_message": last_message,
+        "last_user_message": last_user_message,
         "last_message_at": row["last_message_at"] or row["updated_at"],
         "message_count": int(row["message_count"] or 0),
     }
@@ -345,6 +459,13 @@ def _get_thread(user_id: int, thread_id: int, client_id: str) -> Optional[dict]:
                 ORDER BY m.id DESC
                 LIMIT 1
             ), '') AS last_message,
+            COALESCE((
+                SELECT m.content
+                FROM messages m
+                WHERE m.user_id = t.user_id AND m.thread_id = t.id AND m.role = 'user'
+                ORDER BY m.id DESC
+                LIMIT 1
+            ), '') AS last_user_message,
             COALESCE((
                 SELECT m.created_at
                 FROM messages m
@@ -383,6 +504,13 @@ def _list_threads(user_id: int, client_id: str) -> list[dict]:
                 ORDER BY m.id DESC
                 LIMIT 1
             ), '') AS last_message,
+            COALESCE((
+                SELECT m.content
+                FROM messages m
+                WHERE m.user_id = t.user_id AND m.thread_id = t.id AND m.role = 'user'
+                ORDER BY m.id DESC
+                LIMIT 1
+            ), '') AS last_user_message,
             COALESCE((
                 SELECT m.created_at
                 FROM messages m
@@ -503,19 +631,21 @@ def _touch_thread(
     conn = _db_conn()
     if first_user_message:
         title_hint = _title_from_first_message(first_user_message)
-        conn.execute(
-            """
-            UPDATE chat_threads
-            SET
-                title = CASE
-                    WHEN title = 'New chat' THEN ?
-                    ELSE title
-                END,
-                updated_at = ?
-            WHERE user_id = ? AND device_id = ? AND id = ?
-            """,
-            (title_hint, now, user_id, normalized_client_id, thread_id),
-        )
+        current = conn.execute(
+            "SELECT title FROM chat_threads WHERE user_id = ? AND device_id = ? AND id = ?",
+            (user_id, normalized_client_id, thread_id),
+        ).fetchone()
+        current_title = current["title"] if current else None
+        if _should_replace_thread_title(current_title, title_hint):
+            conn.execute(
+                "UPDATE chat_threads SET title = ?, updated_at = ? WHERE user_id = ? AND device_id = ? AND id = ?",
+                (title_hint, now, user_id, normalized_client_id, thread_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE chat_threads SET updated_at = ? WHERE user_id = ? AND device_id = ? AND id = ?",
+                (now, user_id, normalized_client_id, thread_id),
+            )
     else:
         conn.execute(
             "UPDATE chat_threads SET updated_at = ? WHERE user_id = ? AND device_id = ? AND id = ?",
@@ -568,6 +698,21 @@ def _delete_thread(user_id: int, thread_id: int, client_id: str) -> Optional[int
     conn.close()
     _user_buffers.pop((user_id, thread_id), None)
     return next_thread_id
+
+
+def _delete_account_data(user_id: int) -> None:
+    conn = _db_conn()
+    try:
+        conn.execute("DELETE FROM messages WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM memories WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM chat_threads WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    for key in list(_user_buffers.keys()):
+        if key[0] == user_id:
+            _user_buffers.pop(key, None)
 
 
 def _load_recent_messages(
@@ -688,7 +833,6 @@ def _process_message(
 
     start = time.perf_counter()
     buffer = _get_user_buffer(user_id, thread_id, is_temporary=not store_data)
-    is_first_message = len(buffer.messages) == 0
     buffer.add("user", user_message)
     if store_data:
         _store_message(user_id, thread_id, "user", user_message)
@@ -696,7 +840,7 @@ def _process_message(
             user_id,
             thread_id,
             client_id,
-            first_user_message=user_message if is_first_message else None,
+            first_user_message=user_message,
         )
     else:
         _touch_thread(user_id, thread_id, client_id)
@@ -704,6 +848,23 @@ def _process_message(
     # Deterministic answer for current date/time queries (no model call needed).
     if _is_datetime_request(user_message):
         response = _current_datetime_reply(user_message)
+        buffer.add("assistant", response)
+        if store_data:
+            _store_message(user_id, thread_id, "assistant", response)
+        _touch_thread(user_id, thread_id, client_id)
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        return {
+            "reply": response,
+            "retrieved_memories": [],
+            "latency_ms": latency_ms,
+            "stored_count": 0,
+            "compressed": False,
+            "thread_id": thread_id,
+        }
+
+    direct_percentage = _percentage_reply(user_message)
+    if direct_percentage:
+        response = direct_percentage
         buffer.add("assistant", response)
         if store_data:
             _store_message(user_id, thread_id, "assistant", response)
@@ -789,6 +950,7 @@ def _process_message(
     else:
         _fallback_count += 1
         response = _get_fallback_message()
+    response = _clean_math_markup(response)
 
     buffer.add("assistant", response)
     if store_data:
@@ -878,6 +1040,29 @@ def auth_me():
         "user": {"id": user["id"], "username": user["username"]},
         "default_thread_id": default_thread_id,
     })
+
+
+@app.route("/api/auth/account", methods=["DELETE"])
+@_login_required
+def delete_account(user):
+    data = request.get_json(silent=True) or {}
+    confirmation = (data.get("confirmation") or "").strip().upper()
+    password = (data.get("password") or "").strip()
+    if confirmation != "DELETE":
+        return jsonify({"error": "Type DELETE to confirm account deletion."}), 400
+    if not password:
+        return jsonify({"error": "Password is required."}), 400
+
+    row = _find_user_by_id(int(user["id"]))
+    if not row:
+        session.clear()
+        return jsonify({"error": "Account not found."}), 404
+    if not check_password_hash(row["password_hash"], password):
+        return jsonify({"error": "Incorrect password."}), 401
+
+    _delete_account_data(int(user["id"]))
+    session.clear()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/chat", methods=["POST"])

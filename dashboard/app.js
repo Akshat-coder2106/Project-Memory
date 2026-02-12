@@ -7,12 +7,15 @@ const MOBILE_BREAKPOINT = 1024;
 const THEME_STORAGE_KEY = "memory_theme_v1";
 const LAST_USERNAME_STORAGE_KEY = "memory_last_username_v1";
 const APPEARANCE_STORAGE_KEY = "memory_appearance_v1";
-const AVAILABLE_THEMES = ["default", "gpt", "project", "white", "black", "sunset"];
+const COOLER_SETTINGS_STORAGE_KEY = "memory_cooler_settings_v1";
+const AVAILABLE_THEMES = ["default", "gpt", "project", "white", "mist", "dawn", "black", "sunset"];
 const THEME_META_COLORS = {
   default: "#060910",
   gpt: "#050b09",
   project: "#050919",
   white: "#f4f8ff",
+  mist: "#eef8fb",
+  dawn: "#fff5ea",
   black: "#040507",
   sunset: "#13090a",
 };
@@ -23,6 +26,15 @@ const APPEARANCE_DEFAULTS = {
   radius: 100,
   font: 100,
   compact: false,
+};
+const COOLER_SETTINGS_DEFAULTS = {
+  coolerMode: false,
+  intensity: "balanced",
+};
+const COOLER_INTENSITY_PRESETS = {
+  subtle: { glow: 0.14, blur: 0.92, brightness: 1.0, particles: 0.025 },
+  balanced: { glow: 0.24, blur: 1.0, brightness: 1.05, particles: 0.04 },
+  vivid: { glow: 0.36, blur: 1.15, brightness: 1.1, particles: 0.06 },
 };
 
 function getClientId() {
@@ -37,6 +49,8 @@ const state = {
   theme: "default",
   themePickerOpen: false,
   appearanceOpen: false,
+  coolerOpen: false,
+  coolerSettings: { ...COOLER_SETTINGS_DEFAULTS },
   threads: [],
   activeThreadId: null,
   sidebarOpen: window.innerWidth > MOBILE_BREAKPOINT,
@@ -146,7 +160,8 @@ function applyTheme(theme, options = {}) {
   const shouldPersist = options.persist !== false;
   state.theme = nextTheme;
   document.body.dataset.theme = nextTheme;
-  document.documentElement.style.colorScheme = nextTheme === "white" ? "light" : "dark";
+  document.documentElement.style.colorScheme =
+    (nextTheme === "white" || nextTheme === "mist" || nextTheme === "dawn") ? "light" : "dark";
   const themeMeta = document.querySelector('meta[name="theme-color"]');
   if (themeMeta) {
     themeMeta.setAttribute("content", THEME_META_COLORS[nextTheme] || THEME_META_COLORS.default);
@@ -341,6 +356,171 @@ function initAppearanceStudio() {
   });
 }
 
+function normalizeCoolerIntensity(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(COOLER_INTENSITY_PRESETS, value) ? value : "balanced";
+}
+
+function loadCoolerSettings() {
+  try {
+    const raw = localStorage.getItem(COOLER_SETTINGS_STORAGE_KEY);
+    if (!raw) return { ...COOLER_SETTINGS_DEFAULTS };
+    const parsed = JSON.parse(raw);
+    return {
+      coolerMode: Boolean(parsed.coolerMode),
+      intensity: normalizeCoolerIntensity(parsed.intensity),
+    };
+  } catch (_) {
+    return { ...COOLER_SETTINGS_DEFAULTS };
+  }
+}
+
+function applyCoolerSettings(settings, options = {}) {
+  const next = {
+    coolerMode: Boolean(settings.coolerMode),
+    intensity: normalizeCoolerIntensity(settings.intensity),
+  };
+  state.coolerSettings = next;
+  const preset = COOLER_INTENSITY_PRESETS[next.intensity];
+  const root = document.documentElement;
+  root.style.setProperty("--cooler-glow", String(preset.glow));
+  root.style.setProperty("--cooler-blur", String(preset.blur));
+  root.style.setProperty("--cooler-brightness", String(preset.brightness));
+  root.style.setProperty("--cooler-particles", String(preset.particles));
+  root.style.setProperty("--glow", String(preset.glow));
+  root.style.setProperty("--blur-strength", String(preset.blur));
+  root.style.setProperty("--shadow-strength", next.intensity === "subtle" ? "0.85" : next.intensity === "vivid" ? "1.22" : "1");
+  document.body.classList.toggle("cooler-mode", next.coolerMode);
+  document.body.classList.toggle("cooler-vivid", next.coolerMode && next.intensity === "vivid");
+
+  const switchBtn = document.getElementById("cooler-mode-toggle");
+  if (switchBtn) {
+    switchBtn.classList.toggle("is-on", next.coolerMode);
+    switchBtn.setAttribute("aria-checked", next.coolerMode ? "true" : "false");
+  }
+  document.querySelectorAll(".cooler-segment[data-intensity]").forEach((btn) => {
+    const active = btn.dataset.intensity === next.intensity;
+    btn.classList.toggle("is-active", active);
+    btn.setAttribute("aria-checked", active ? "true" : "false");
+  });
+
+  if (options.persist !== false) {
+    try {
+      localStorage.setItem(COOLER_SETTINGS_STORAGE_KEY, JSON.stringify(next));
+    } catch (_) {
+      // Ignore localStorage failures.
+    }
+  }
+}
+
+function setCoolerDrawerOpen(open) {
+  const drawer = document.getElementById("cooler-settings-drawer");
+  const btn = document.getElementById("cooler-settings-btn");
+  if (!drawer || !btn) return;
+  const nextOpen = !!open;
+  state.coolerOpen = nextOpen;
+  document.body.classList.toggle("cooler-open", nextOpen);
+  drawer.setAttribute("aria-hidden", nextOpen ? "false" : "true");
+  btn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+}
+
+function buildShareableThemeLink() {
+  try {
+    const url = new URL(window.location.href);
+    const data = {
+      c: state.coolerSettings.coolerMode ? 1 : 0,
+      i: state.coolerSettings.intensity,
+      t: state.theme,
+    };
+    url.searchParams.set("theme_pack", btoa(JSON.stringify(data)));
+    return url.toString();
+  } catch (_) {
+    return window.location.href;
+  }
+}
+
+function applyThemePackFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    const raw = url.searchParams.get("theme_pack");
+    if (!raw) return;
+    const data = JSON.parse(atob(raw));
+    if (typeof data.t === "string") {
+      applyTheme(data.t);
+    }
+    applyCoolerSettings({
+      coolerMode: Boolean(data.c),
+      intensity: normalizeCoolerIntensity(data.i),
+    });
+  } catch (_) {
+    // Ignore malformed theme links.
+  }
+}
+
+function initCoolerSettings() {
+  const openBtn = document.getElementById("cooler-settings-btn");
+  const closeBtn = document.getElementById("cooler-close-btn");
+  const overlay = document.getElementById("cooler-overlay");
+  const modeToggle = document.getElementById("cooler-mode-toggle");
+  const intensityGroup = document.getElementById("cooler-intensity-group");
+  const saveBtn = document.getElementById("cooler-save-btn");
+  const resetBtn = document.getElementById("cooler-reset-btn");
+  const shareBtn = document.getElementById("cooler-share-btn");
+  if (!openBtn || !closeBtn || !overlay || !modeToggle || !intensityGroup || !saveBtn || !resetBtn || !shareBtn) return;
+
+  const saved = loadCoolerSettings();
+  applyCoolerSettings(saved, { persist: false });
+  setCoolerDrawerOpen(false);
+
+  openBtn.addEventListener("click", () => {
+    setAppearancePanelOpen(false);
+    setThemePickerOpen(false);
+    setCoolerDrawerOpen(true);
+  });
+  closeBtn.addEventListener("click", () => setCoolerDrawerOpen(false));
+  overlay.addEventListener("click", () => setCoolerDrawerOpen(false));
+
+  modeToggle.addEventListener("click", () => {
+    applyCoolerSettings({
+      ...state.coolerSettings,
+      coolerMode: !state.coolerSettings.coolerMode,
+    }, { persist: false });
+  });
+
+  intensityGroup.addEventListener("click", (e) => {
+    const btn = e.target.closest(".cooler-segment[data-intensity]");
+    if (!btn) return;
+    applyCoolerSettings({
+      ...state.coolerSettings,
+      intensity: btn.dataset.intensity,
+    }, { persist: false });
+  });
+
+  saveBtn.addEventListener("click", () => {
+    applyCoolerSettings(state.coolerSettings);
+    showNotification("Theme saved", "info");
+  });
+
+  resetBtn.addEventListener("click", () => {
+    applyCoolerSettings(COOLER_SETTINGS_DEFAULTS);
+    showNotification("Theme reset", "info");
+  });
+
+  shareBtn.addEventListener("click", async () => {
+    const link = buildShareableThemeLink();
+    try {
+      await navigator.clipboard.writeText(link);
+      showNotification("Theme link copied", "info");
+    } catch (_) {
+      showNotification("Could not copy theme link", "error");
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setCoolerDrawerOpen(false);
+  });
+}
+
 function getUserAvatarLetter() {
   const name = (state.user && state.user.username ? String(state.user.username) : "").trim();
   if (!name) return "U";
@@ -359,6 +539,63 @@ function truncateText(text, max = 48) {
   return `${value.slice(0, max - 3).trimEnd()}...`;
 }
 
+function toTitleCase(text) {
+  return String(text || "")
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+function cleanSentenceForTitle(raw) {
+  const value = String(raw || "")
+    .replace(/[`"'()[\]{}]/g, " ")
+    .replace(/[^\w\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return value;
+}
+
+function buildSmartTitle(source, fallback = "Start a New Conversation") {
+  const cleaned = cleanSentenceForTitle(source);
+  if (!cleaned) return fallback;
+  const stopwords = new Set([
+    "a", "an", "and", "are", "be", "can", "for", "from", "get", "give", "help", "i", "in",
+    "is", "it", "me", "my", "of", "on", "or", "please", "show", "tell", "that", "the", "to",
+    "we", "what", "when", "where", "which", "with", "you", "your",
+  ]);
+  const words = cleaned
+    .split(" ")
+    .map((w) => w.toLowerCase())
+    .filter((w) => w.length > 1 && !stopwords.has(w));
+  const picked = words.length ? words : cleaned.split(" ").map((w) => w.toLowerCase());
+  const compact = picked.slice(0, 6).join(" ").trim();
+  const finalTitle = toTitleCase(compact);
+  if (!finalTitle || /^new chat$/i.test(finalTitle)) return fallback;
+  const count = finalTitle.split(" ").filter(Boolean).length;
+  if (count < 3) {
+    const padded = toTitleCase(picked.slice(0, 3).join(" "));
+    return padded || fallback;
+  }
+  return finalTitle;
+}
+
+function looksGenericTitle(title) {
+  const value = String(title || "").trim().toLowerCase();
+  return !value || ["new chat", "chat", "conversation", "start", "hello", "hi", "hey"].includes(value);
+}
+
+function resolveThreadTitle(thread) {
+  const fallback = "Start a New Conversation";
+  const baseTitle = String((thread && thread.title) || "").trim();
+  const source = String((thread && (thread.last_user_message || thread.last_message)) || "").trim();
+  if (!source && !baseTitle) return fallback;
+  if (!looksGenericTitle(baseTitle) && baseTitle.split(" ").length <= 6) {
+    return toTitleCase(baseTitle);
+  }
+  return buildSmartTitle(source, fallback);
+}
+
 function formatThreadTime(ts) {
   const normalized = normalizeServerTimestamp(ts);
   if (!normalized) return "";
@@ -370,6 +607,65 @@ function formatThreadTime(ts) {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function getThreadIdFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    const raw = url.searchParams.get("thread_id");
+    if (!raw) return null;
+    const id = Number(raw);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function setThreadIdInUrl(threadId) {
+  try {
+    const url = new URL(window.location.href);
+    if (threadId) {
+      url.searchParams.set("thread_id", String(threadId));
+    } else {
+      url.searchParams.delete("thread_id");
+    }
+    window.history.replaceState({}, "", url.toString());
+  } catch (_) {
+    // Ignore history update issues.
+  }
+}
+
+async function shareThread(threadId) {
+  const id = Number(threadId);
+  if (!id) return;
+  const thread = state.threads.find((t) => Number(t.id) === id);
+  const safeTitle = (thread && thread.title) ? thread.title : "Memory chat";
+  let shareUrl = window.location.href;
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set("thread_id", String(id));
+    shareUrl = url.toString();
+  } catch (_) {}
+
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: `Chat: ${safeTitle}`,
+        text: `Open chat: ${safeTitle}`,
+        url: shareUrl,
+      });
+      showNotification("Chat shared", "info");
+      return;
+    } catch (_) {
+      // Fallback to copy.
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(shareUrl);
+    showNotification("Chat link copied", "info");
+  } catch (_) {
+    showNotification("Could not copy chat link", "error");
+  }
 }
 
 async function api(path, options = {}) {
@@ -550,6 +846,20 @@ function showNotification(message, type = "info") {
     notification.style.transform = "translateY(-20px)";
     setTimeout(() => notification.remove(), 300);
   }, 2600);
+}
+
+function triggerRipple(event, element) {
+  if (!element) return;
+  const rect = element.getBoundingClientRect();
+  const size = Math.max(rect.width, rect.height) * 0.92;
+  const ripple = document.createElement("span");
+  ripple.className = "tap-ripple";
+  ripple.style.width = `${size}px`;
+  ripple.style.height = `${size}px`;
+  ripple.style.left = `${event.clientX - rect.left - size / 2}px`;
+  ripple.style.top = `${event.clientY - rect.top - size / 2}px`;
+  element.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 520);
 }
 
 function clearAuthMessages() {
@@ -735,6 +1045,20 @@ function renderMessages(messages, options = {}) {
         </div>
         <h1 class="welcome-title">Memory Workspace</h1>
         <p class="welcome-sub" id="welcome-sub">Start a conversation and your important context will be carried forward.</p>
+        <div class="welcome-highlights" aria-label="Workspace highlights">
+          <div class="welcome-card">
+            <span class="welcome-card-title">Partitioned Memory</span>
+            <span class="welcome-card-sub">User, thread, and category aware retrieval.</span>
+          </div>
+          <div class="welcome-card">
+            <span class="welcome-card-title">Smart Titles</span>
+            <span class="welcome-card-sub">Chats auto-name from meaningful user intent.</span>
+          </div>
+          <div class="welcome-card">
+            <span class="welcome-card-title">Low-Latency Recall</span>
+            <span class="welcome-card-sub">Fast context injection with ranked top-k memory.</span>
+          </div>
+        </div>
       </div>
     `;
   }
@@ -778,25 +1102,30 @@ function renderThreadList() {
   }
 
   list.innerHTML = state.threads
-    .map((thread) => {
+    .map((thread, index) => {
       const active = thread.id === state.activeThreadId;
-      const title = escapeHtml(thread.title || "New chat");
+      const resolvedTitle = resolveThreadTitle(thread);
+      const title = escapeHtml(resolvedTitle);
       const time = formatThreadTime(thread.last_message_at || thread.updated_at);
       const count = Number(thread.message_count || 0);
-      const previewSource = thread.last_message || "No messages yet";
-      const preview = escapeHtml(truncateText(previewSource, 42));
+      const previewSource = String(thread.last_message || "No messages yet").replace(/\s+/g, " ").trim();
+      const preview = escapeHtml(previewSource || "No messages yet");
       const meta = [time, count > 0 ? `${count} msg${count === 1 ? "" : "s"}` : "empty"]
         .filter(Boolean)
         .join(" · ");
       return `
-        <div class="thread-item${active ? " active" : ""}">
+        <div class="thread-item${active ? " active" : ""}" style="--thread-index:${index}">
           <button class="thread-main" type="button" data-thread-id="${thread.id}" aria-label="Open ${title}">
             <div class="thread-title-row"><span class="thread-title">${title}</span></div>
-            <div class="thread-meta">${escapeHtml(meta)}${preview ? ` · ${preview}` : ""}</div>
+            <div class="thread-meta">${escapeHtml(meta)}</div>
+            <div class="thread-preview">${preview}</div>
           </button>
           <div class="thread-actions">
-            <button class="thread-more-btn" type="button" data-thread-id="${thread.id}" aria-label="Open actions for ${title}">...</button>
+            <button class="thread-more-btn" type="button" data-thread-id="${thread.id}" aria-label="Open actions for ${title}">•••</button>
             <div class="thread-menu" role="menu" aria-label="Thread actions">
+              <button class="thread-menu-item thread-menu-share" type="button" data-thread-id="${thread.id}" role="menuitem">
+                Share chat
+              </button>
               <button class="thread-menu-item thread-menu-delete" type="button" data-thread-id="${thread.id}" role="menuitem">
                 Delete chat
               </button>
@@ -833,6 +1162,7 @@ async function loadThreads(options = {}) {
   }
 
   state.activeThreadId = nextId;
+  setThreadIdInUrl(state.activeThreadId);
   renderThreadList();
   updateHeaderThreadUI();
   await loadMessages();
@@ -847,6 +1177,7 @@ async function createThread() {
   if (data.thread.is_temporary) return;
   upsertThread(data.thread);
   state.activeThreadId = data.thread.id;
+  setThreadIdInUrl(state.activeThreadId);
   renderThreadList();
   renderMessages([]);
   updateHeaderThreadUI();
@@ -861,6 +1192,7 @@ async function selectThread(threadId) {
     return;
   }
   state.activeThreadId = id;
+  setThreadIdInUrl(state.activeThreadId);
   renderThreadList();
   updateHeaderThreadUI();
   renderThreadLoadingState();
@@ -877,6 +1209,7 @@ async function deleteThread(threadId) {
   if (state.activeThreadId && !state.threads.some((t) => t.id === state.activeThreadId)) {
     state.activeThreadId = state.threads[0] ? state.threads[0].id : null;
   }
+  setThreadIdInUrl(state.activeThreadId);
   renderThreadList();
   updateHeaderThreadUI();
   await loadMessages();
@@ -1206,16 +1539,111 @@ async function handleLogout() {
   } catch (_) {
     // Ignore network errors while clearing local UI state.
   }
+  applySignedOutState("Logged out.", "success");
+}
+
+function applySignedOutState(message = "", type = "success") {
   state.user = null;
   state.threads = [];
   state.activeThreadId = null;
+  setThreadIdInUrl(null);
   document.getElementById("signin-password").value = "";
   document.getElementById("signup-password").value = "";
   document.getElementById("signup-confirm-password").value = "";
   toggleApp(false);
   renderMessages([]);
   renderThreadList();
-  showAuthView("choice", { clearMessages: true, message: "Logged out.", type: "success" });
+  showAuthView("choice", { clearMessages: true, message, type });
+}
+
+function setDeleteAccountModalOpen(open) {
+  const overlay = document.getElementById("delete-account-overlay");
+  if (!overlay) return;
+  const shouldOpen = Boolean(open);
+  overlay.hidden = !shouldOpen;
+  document.body.classList.toggle("danger-modal-open", shouldOpen);
+  if (shouldOpen) {
+    const input = document.getElementById("delete-account-confirm-input");
+    if (input) input.focus();
+  }
+}
+
+function resetDeleteAccountModal() {
+  const confirmInput = document.getElementById("delete-account-confirm-input");
+  const passwordInput = document.getElementById("delete-account-password-input");
+  const consentInput = document.getElementById("delete-account-consent-input");
+  const error = document.getElementById("delete-account-error");
+  const confirmBtn = document.getElementById("delete-account-confirm-btn");
+  if (confirmInput) confirmInput.value = "";
+  if (passwordInput) passwordInput.value = "";
+  if (consentInput) consentInput.checked = false;
+  if (error) error.textContent = "";
+  if (confirmBtn) confirmBtn.disabled = true;
+}
+
+function updateDeleteAccountActionState() {
+  const confirmInput = document.getElementById("delete-account-confirm-input");
+  const passwordInput = document.getElementById("delete-account-password-input");
+  const consentInput = document.getElementById("delete-account-consent-input");
+  const confirmBtn = document.getElementById("delete-account-confirm-btn");
+  if (!confirmBtn) return;
+  const ready =
+    String((confirmInput && confirmInput.value) || "").trim().toUpperCase() === "DELETE" &&
+    String((passwordInput && passwordInput.value) || "").trim().length > 0 &&
+    Boolean(consentInput && consentInput.checked);
+  confirmBtn.disabled = !ready;
+}
+
+function openDeleteAccountModal() {
+  resetDeleteAccountModal();
+  setDeleteAccountModalOpen(true);
+}
+
+function closeDeleteAccountModal() {
+  setDeleteAccountModalOpen(false);
+}
+
+async function handleDeleteAccountConfirm() {
+  const confirmInput = document.getElementById("delete-account-confirm-input");
+  const passwordInput = document.getElementById("delete-account-password-input");
+  const error = document.getElementById("delete-account-error");
+  const confirmBtn = document.getElementById("delete-account-confirm-btn");
+  const consentInput = document.getElementById("delete-account-consent-input");
+  const confirmation = String((confirmInput && confirmInput.value) || "").trim();
+  const password = String((passwordInput && passwordInput.value) || "").trim();
+  if (error) error.textContent = "";
+
+  if (confirmation.toUpperCase() !== "DELETE") {
+    if (error) error.textContent = "Type DELETE to confirm.";
+    return;
+  }
+  if (!password) {
+    if (error) error.textContent = "Password is required.";
+    return;
+  }
+  if (!Boolean(consentInput && consentInput.checked)) {
+    if (error) error.textContent = "Please acknowledge the warning first.";
+    return;
+  }
+  if (confirmBtn && confirmBtn.disabled) return;
+
+  if (confirmBtn) confirmBtn.disabled = true;
+  try {
+    await api("/api/auth/account", {
+      method: "DELETE",
+      body: JSON.stringify({
+        confirmation: "DELETE",
+        password,
+      }),
+    });
+    closeDeleteAccountModal();
+    applySignedOutState("Account deleted permanently.", "success");
+    showNotification("Account deleted", "info");
+  } catch (err) {
+    if (error) error.textContent = err.message || "Could not delete account.";
+  } finally {
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
 }
 
 async function bootstrapAuthState() {
@@ -1225,7 +1653,11 @@ async function bootstrapAuthState() {
       state.user = data.user;
       setUserUI(data.user);
       toggleApp(true);
-      await loadThreads({ preferThreadId: data.default_thread_id, preserveSelection: false });
+      const preferredFromUrl = getThreadIdFromUrl();
+      await loadThreads({
+        preferThreadId: preferredFromUrl || data.default_thread_id,
+        preserveSelection: false,
+      });
       return;
     }
   } catch (_) {
@@ -1252,6 +1684,16 @@ function initThreadInteractions() {
 
   if (threadList) {
     threadList.addEventListener("click", async (e) => {
+      const shareMenuBtn = e.target.closest(".thread-menu-share");
+      if (shareMenuBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const threadId = Number(shareMenuBtn.dataset.threadId);
+        closeThreadMenus();
+        await shareThread(threadId);
+        return;
+      }
+
       const deleteMenuBtn = e.target.closest(".thread-menu-delete");
       if (deleteMenuBtn) {
         e.preventDefault();
@@ -1281,6 +1723,7 @@ function initThreadInteractions() {
       closeThreadMenus();
       const openBtn = e.target.closest(".thread-main");
       if (!openBtn) return;
+      triggerRipple(e, openBtn);
       const threadId = Number(openBtn.dataset.threadId);
       try {
         await selectThread(threadId);
@@ -1302,7 +1745,8 @@ function initThreadInteractions() {
     }
   });
 
-  newChatBtn.addEventListener("click", async () => {
+  newChatBtn.addEventListener("click", async (e) => {
+    triggerRipple(e, newChatBtn);
     try {
       await createThread();
     } catch (err) {
@@ -1332,6 +1776,7 @@ function initThreadInteractions() {
 
 function init() {
   updateViewportHeightVar();
+  closeDeleteAccountModal();
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", updateViewportHeightVar);
     window.visualViewport.addEventListener("scroll", updateViewportHeightVar);
@@ -1341,6 +1786,8 @@ function init() {
   });
   initThemePicker();
   initAppearanceStudio();
+  initCoolerSettings();
+  applyThemePackFromUrl();
   addTypingIndicatorStyles();
   addKeyboardShortcuts();
   enhanceScrollBehavior();
@@ -1350,6 +1797,14 @@ function init() {
   const input = document.getElementById("chat-input");
   const sendBtn = document.getElementById("send-btn");
   const logoutBtn = document.getElementById("logout-btn");
+  const openDeleteAccountBtn = document.getElementById("open-delete-account-btn");
+  const drawerDeleteAccountBtn = document.getElementById("drawer-delete-account-btn");
+  const deleteAccountOverlay = document.getElementById("delete-account-overlay");
+  const deleteAccountCancelBtn = document.getElementById("delete-account-cancel-btn");
+  const deleteAccountConfirmBtn = document.getElementById("delete-account-confirm-btn");
+  const deleteAccountConfirmInput = document.getElementById("delete-account-confirm-input");
+  const deleteAccountPasswordInput = document.getElementById("delete-account-password-input");
+  const deleteAccountConsentInput = document.getElementById("delete-account-consent-input");
 
   const goSignIn = document.getElementById("go-signin");
   const goSignUp = document.getElementById("go-signup");
@@ -1374,6 +1829,33 @@ function init() {
   autoResizeComposer(input);
   sendBtn.disabled = true;
   logoutBtn.addEventListener("click", handleLogout);
+  if (openDeleteAccountBtn) openDeleteAccountBtn.addEventListener("click", openDeleteAccountModal);
+  if (drawerDeleteAccountBtn) drawerDeleteAccountBtn.addEventListener("click", () => {
+    setCoolerDrawerOpen(false);
+    openDeleteAccountModal();
+  });
+  if (deleteAccountCancelBtn) deleteAccountCancelBtn.addEventListener("click", closeDeleteAccountModal);
+  if (deleteAccountConfirmBtn) deleteAccountConfirmBtn.addEventListener("click", handleDeleteAccountConfirm);
+  [deleteAccountConfirmInput, deleteAccountPasswordInput, deleteAccountConsentInput].filter(Boolean).forEach((el) => {
+    el.addEventListener("input", updateDeleteAccountActionState);
+    el.addEventListener("change", updateDeleteAccountActionState);
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") e.preventDefault();
+    });
+  });
+  updateDeleteAccountActionState();
+  if (deleteAccountOverlay) {
+    deleteAccountOverlay.addEventListener("click", (e) => {
+      if (e.target === deleteAccountOverlay) {
+        closeDeleteAccountModal();
+      }
+    });
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !document.getElementById("delete-account-overlay")?.hidden) {
+      closeDeleteAccountModal();
+    }
+  });
 
   goSignIn.addEventListener("click", () => showAuthView("signin", { clearMessages: true }));
   goSignUp.addEventListener("click", () => showAuthView("signup", { clearMessages: true }));
