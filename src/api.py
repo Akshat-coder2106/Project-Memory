@@ -70,6 +70,25 @@ _fallback_count = 0
 _DEFAULT_CLIENT_ID = "default"
 _CLIENT_ID_HEADER = "X-Client-ID"
 _CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$")
+_DEMO_ACCOUNT_USERNAME = (os.environ.get("DEMO_ACCOUNT_USERNAME") or "judge@aur-x.com").strip() or "judge@aur-x.com"
+_DEMO_ACCOUNT_PASSWORD = (os.environ.get("DEMO_ACCOUNT_PASSWORD") or "judge-demo-access").strip() or "judge-demo-access"
+_DEMO_CONVERSATION: list[tuple[str, str]] = [
+    ("user", "Hi, I am a hackathon judge. Can you give me a quick overview of this project?"),
+    (
+        "assistant",
+        "Welcome. This app is a memory-enabled assistant that keeps important user facts across chats, retrieves the best context, and replies with low latency.",
+    ),
+    ("user", "What should I test first in this demo?"),
+    (
+        "assistant",
+        "Start by asking about user preferences or past context. You can open the memories panel to inspect what was stored and how retrieval supports each response.",
+    ),
+    ("user", "Great. Show me one practical use case."),
+    (
+        "assistant",
+        "Example: a user mentions preferred meeting times once, and the assistant recalls that preference in later sessions without asking again.",
+    ),
+]
 _GENERIC_THREAD_TITLES = {
     "new chat",
     "new conversation",
@@ -355,6 +374,81 @@ def _create_user(username: str, password: str) -> Tuple[Optional[int], Optional[
         return None, "Username already exists."
     finally:
         conn.close()
+
+
+def _thread_message_count(user_id: int, thread_id: int) -> int:
+    conn = _db_conn()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) AS count FROM messages WHERE user_id = ? AND thread_id = ?",
+            (user_id, thread_id),
+        ).fetchone()
+        return int(row["count"] or 0)
+    finally:
+        conn.close()
+
+
+def _latest_non_empty_thread_id(user_id: int, client_id: str) -> Optional[int]:
+    conn = _db_conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT t.id
+            FROM chat_threads t
+            JOIN messages m ON m.user_id = t.user_id AND m.thread_id = t.id
+            WHERE t.user_id = ? AND t.device_id = ?
+            GROUP BY t.id
+            ORDER BY MAX(t.updated_at) DESC, t.id DESC
+            LIMIT 1
+            """,
+            (user_id, _normalize_client_id(client_id)),
+        ).fetchone()
+        return int(row["id"]) if row else None
+    finally:
+        conn.close()
+
+
+def _seed_demo_thread_if_empty(user_id: int, thread_id: int, client_id: str) -> None:
+    if _thread_message_count(user_id, thread_id) > 0:
+        return
+    first_user_message = ""
+    for role, content in _DEMO_CONVERSATION:
+        _store_message(user_id, thread_id, role, content)
+        if (not first_user_message) and role == "user":
+            first_user_message = content
+    _touch_thread(
+        user_id,
+        thread_id,
+        client_id,
+        first_user_message=first_user_message or None,
+    )
+
+
+def _provision_demo_account() -> Tuple[int, str, int]:
+    row = _find_user_by_username(_DEMO_ACCOUNT_USERNAME)
+    if not row:
+        user_id, create_err = _create_user(_DEMO_ACCOUNT_USERNAME, _DEMO_ACCOUNT_PASSWORD)
+        if create_err:
+            row = _find_user_by_username(_DEMO_ACCOUNT_USERNAME)
+            if not row:
+                raise RuntimeError(create_err)
+        else:
+            row = _find_user_by_id(int(user_id))
+    if not row:
+        raise RuntimeError("Unable to provision demo account.")
+
+    user_id = int(row["id"])
+    username = str(row["username"])
+    client_id = _effective_client_id(user_id)
+    _coalesce_user_threads_to_user_bucket(user_id, client_id)
+
+    preferred_thread_id = _latest_non_empty_thread_id(user_id, client_id)
+    if preferred_thread_id is not None:
+        return user_id, username, preferred_thread_id
+
+    thread_id = _ensure_default_thread(user_id, client_id)
+    _seed_demo_thread_if_empty(user_id, thread_id, client_id)
+    return user_id, username, thread_id
 
 
 def _set_session_user(user_id: int, username: str):
@@ -1012,6 +1106,21 @@ def login():
     return jsonify({
         "user": {"id": row["id"], "username": row["username"]},
         "default_thread_id": default_thread_id,
+    })
+
+
+@app.route("/api/auth/demo", methods=["POST"])
+def demo_login():
+    try:
+        user_id, username, preferred_thread_id = _provision_demo_account()
+    except Exception:
+        app.logger.exception("demo auth failed")
+        return jsonify({"error": "Unable to start demo right now."}), 500
+    _set_session_user(user_id, username)
+    return jsonify({
+        "user": {"id": user_id, "username": username},
+        "default_thread_id": preferred_thread_id,
+        "demo": True,
     })
 
 

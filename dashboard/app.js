@@ -909,6 +909,11 @@ function focusAuthView(view) {
     document.getElementById("signup-username").focus();
     return;
   }
+  const demoBtn = document.getElementById("go-demo");
+  if (demoBtn) {
+    demoBtn.focus();
+    return;
+  }
   document.getElementById("go-signin").focus();
 }
 
@@ -1508,6 +1513,31 @@ async function registerWithCredentials(username, password) {
   await loadThreads({ preferThreadId: data.default_thread_id, preserveSelection: false });
 }
 
+async function loginWithDemoAccount() {
+  const data = await api("/api/auth/demo", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  state.user = data.user;
+  setUserUI(data.user);
+  clearAuthMessages();
+  toggleApp(true);
+  showNotification("Live demo ready", "info");
+  await loadThreads({ preferThreadId: data.default_thread_id, preserveSelection: false });
+}
+
+async function handleDemoLogin() {
+  setAuthBusy(true);
+  setAuthMessage("choice", "Starting live demo...");
+  try {
+    await loginWithDemoAccount();
+  } catch (err) {
+    setAuthMessage("choice", err.message || "Could not start demo.", "error");
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
 async function handleSignInSubmit(e) {
   e.preventDefault();
   const username = document.getElementById("signin-username").value.trim();
@@ -1849,6 +1879,7 @@ function init() {
 
   const goSignIn = document.getElementById("go-signin");
   const goSignUp = document.getElementById("go-signup");
+  const goDemo = document.getElementById("go-demo");
   const signInBack = document.getElementById("signin-back");
   const signUpBack = document.getElementById("signup-back");
   const signInForm = document.getElementById("signin-form");
@@ -1898,6 +1929,7 @@ function init() {
     }
   });
 
+  if (goDemo) goDemo.addEventListener("click", handleDemoLogin);
   goSignIn.addEventListener("click", () => showAuthView("signin", { clearMessages: true }));
   goSignUp.addEventListener("click", () => showAuthView("signup", { clearMessages: true }));
   signInBack.addEventListener("click", () => showAuthView("choice", { clearMessages: true }));

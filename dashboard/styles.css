@@ -2111,11 +2111,28 @@ body:is([data-theme="white"], [data-theme="mist"], [data-theme="dawn"]) .header-
     box-shadow: 0 10px 24px rgba(10, 132, 255, 0.35), 0 2px 8px rgba(10, 132, 255, 0.22);
 }
 
+.auth-button-demo {
+    border: 1px solid transparent;
+    background: linear-gradient(130deg, #16a34a 0%, #0ea5e9 58%, #38bdf8 100%);
+    color: #ffffff;
+    box-shadow: 0 14px 32px rgba(14, 165, 233, 0.34), 0 5px 14px rgba(22, 163, 74, 0.25);
+}
+
+.auth-button-demo:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.04);
+}
+
 #auth-view-choice .auth-button {
     min-height: 44px;
     font-size: 0.9rem;
     font-weight: 700;
     letter-spacing: 0.01em;
+}
+
+#auth-view-choice .auth-button-demo {
+    min-height: 52px;
+    font-size: 0.96rem;
 }
 
 .auth-button:disabled {
